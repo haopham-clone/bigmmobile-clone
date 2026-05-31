@@ -1,13 +1,15 @@
-# BigM Mobile Tablet Cases Crawler
+# BigM Mobile Product Crawler
 
 Python crawler for public product data from:
 
 ```text
-https://bigmmobile.com.au/product-category/tablet-cases/
+https://bigmmobile.com.au/shop/
 ```
 
-The script crawls category pagination only. It does not log in, bypass security
-controls, fetch hidden wholesale prices, or download images.
+The script crawls the full public shop pagination, including products such as
+phones, phone cases, tablet cases, spare parts, screen protectors, and
+accessories. It does not log in, bypass security controls, fetch hidden
+wholesale prices, or download images.
 
 ## Requirements
 
@@ -31,13 +33,13 @@ python main.py
 
 The crawler waits a random 1-3 seconds between requests and logs progress for
 each page. It stops when there are no product cards, no new product URLs, a page
-request fails, or the 100-page safety limit is reached.
+request fails, or the 1000-page safety limit is reached.
 
 Output files:
 
 ```text
-data/bigm_tablet_cases.csv
-data/bigm_tablet_cases.json
+data/bigm_products.csv
+data/bigm_products.json
 ```
 
 ## Output Schema
@@ -48,7 +50,7 @@ data/bigm_tablet_cases.json
 | `price` | Public RRP when present, otherwise public price or `null` |
 | `product_url` | Product detail URL |
 | `image_url` | Public image URL or `null` |
-| `category` | Always `Tablet Cases` |
+| `category` | First public category label shown on the product card or `null` |
 | `source` | Always `BigM Mobile` |
 | `crawled_at` | ISO timestamp in UTC |
 
@@ -61,7 +63,7 @@ data/bigm_tablet_cases.json
     "price": "RRP: $49.99",
     "product_url": "https://bigmmobile.com.au/product/example-product/",
     "image_url": "https://example.com/product-image.jpg",
-    "category": "Tablet Cases",
+    "category": "Phone Cases",
     "source": "BigM Mobile",
     "crawled_at": "2026-05-31T10:00:00+00:00"
   }

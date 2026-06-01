@@ -6,7 +6,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Kiểm Kho — Inventory Management",
+  title: "Inventory — Stock Management",
   description: "Internal mobile device inventory management system",
 };
 
@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi">
+    <html lang="en">
       <body className={inter.className}>
         {children}
         <Toaster richColors position="top-right" />

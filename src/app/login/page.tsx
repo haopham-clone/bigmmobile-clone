@@ -37,9 +37,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold">Kiểm Kho</CardTitle>
+          <CardTitle className="text-2xl font-bold">Inventory</CardTitle>
           <CardDescription>
-            Hệ thống quản lý kho thiết bị di động nội bộ
+            Internal mobile device inventory management
           </CardDescription>
           {isMockMode && (
             <Badge variant="secondary" className="mx-auto mt-2">
@@ -70,7 +70,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Mật khẩu</Label>
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 name="password"
@@ -86,7 +86,7 @@ export default function LoginPage() {
               </p>
             )}
             <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending ? "Đang đăng nhập..." : "Đăng nhập"}
+              {isPending ? "Signing in..." : "Sign in"}
             </Button>
           </form>
         </CardContent>

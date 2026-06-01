@@ -6,11 +6,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
-import { addProduct } from "./actions";
+import { Pencil } from "lucide-react";
+import type { Product } from "@/types/database";
+import { editProduct } from "./actions";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -50,34 +52,41 @@ const formSchema = z.object({
   cost_price: z.coerce.number().min(0, "Must be ≥ 0"),
   selling_price: z.coerce.number().min(0, "Must be ≥ 0"),
   quantity: z.coerce.number().int().min(0, "Must be ≥ 0"),
+  is_active: z.boolean(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
 
-interface AddProductDialogProps {
-  defaultCategory?: string;
+function productToFormValues(product: Product): FormValues {
+  return {
+    image_url: product.image_url ?? "",
+    brand: product.brand,
+    model: product.model,
+    storage_ram: product.storage_ram ?? "",
+    color: product.color ?? "",
+    condition: product.condition ?? "",
+    category: product.category as FormValues["category"],
+    sku: product.sku,
+    cost_price: Number(product.cost_price),
+    selling_price: Number(product.selling_price),
+    quantity: product.quantity,
+    is_active: product.is_active,
+  };
 }
 
-export function AddProductDialog({ defaultCategory = "other" }: AddProductDialogProps) {
+interface EditProductDialogProps {
+  product: Product;
+  variant?: "icon" | "default";
+}
+
+export function EditProductDialog({ product, variant = "default" }: EditProductDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      image_url: "",
-      brand: "",
-      model: "",
-      storage_ram: "",
-      color: "",
-      condition: "",
-      category: defaultCategory as FormValues["category"],
-      sku: "",
-      cost_price: 0,
-      selling_price: 0,
-      quantity: 0,
-    },
+    defaultValues: productToFormValues(product),
   });
 
   function onSubmit(values: FormValues) {
@@ -87,13 +96,12 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
     });
 
     startTransition(async () => {
-      const result = await addProduct(formData);
+      const result = await editProduct(product.id, formData);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      toast.success("Product added successfully");
-      form.reset();
+      toast.success("Product updated");
       setOpen(false);
       router.refresh();
     });
@@ -104,35 +112,31 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) {
-          form.reset({
-            image_url: "",
-            brand: "",
-            model: "",
-            storage_ram: "",
-            color: "",
-            condition: "",
-            category: defaultCategory as FormValues["category"],
-            sku: "",
-            cost_price: 0,
-            selling_price: 0,
-            quantity: 0,
-          });
-        }
+        if (next) form.reset(productToFormValues(product));
       }}
     >
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" />
-          Add product
-        </Button>
+        {variant === "icon" ? (
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            aria-label="Edit product"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={(e) => e.stopPropagation()}>
+            <Pencil className="h-4 w-4" />
+            Edit product
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add new product</DialogTitle>
-          <DialogDescription>
-            Enter mobile device details for inventory
-          </DialogDescription>
+          <DialogTitle>Edit product</DialogTitle>
+          <DialogDescription>Update product details and stock quantity</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -181,7 +185,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                   <FormItem>
                     <FormLabel>Brand *</FormLabel>
                     <FormControl>
-                      <Input placeholder="Apple" {...field} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -194,7 +198,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                   <FormItem>
                     <FormLabel>Model *</FormLabel>
                     <FormControl>
-                      <Input placeholder="iPhone 15 Pro" {...field} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -209,7 +213,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                   <FormItem>
                     <FormLabel>Storage / RAM</FormLabel>
                     <FormControl>
-                      <Input placeholder="256GB" {...field} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -222,7 +226,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                   <FormItem>
                     <FormLabel>Color</FormLabel>
                     <FormControl>
-                      <Input placeholder="Black" {...field} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -237,7 +241,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                   <FormItem>
                     <FormLabel>Condition</FormLabel>
                     <FormControl>
-                      <Input placeholder="Grade A++" {...field} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -250,7 +254,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                   <FormItem>
                     <FormLabel>SKU *</FormLabel>
                     <FormControl>
-                      <Input placeholder="iphone-15-pro-256gb" {...field} />
+                      <Input {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -298,12 +302,29 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="is_active"
+              render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-md border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>Active status</FormLabel>
+                    <p className="text-sm text-muted-foreground">
+                      Inactive items stay in inventory but are hidden from dashboard stats
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Saving..." : "Save product"}
+                {isPending ? "Saving..." : "Save changes"}
               </Button>
             </DialogFooter>
           </form>

@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS public.products (
   storage_ram TEXT,
   color TEXT,
   condition TEXT,
+  category TEXT NOT NULL DEFAULT 'other',
   sku TEXT NOT NULL UNIQUE,
   cost_price NUMERIC(12, 2) NOT NULL DEFAULT 0,
   selling_price NUMERIC(12, 2) NOT NULL DEFAULT 0,

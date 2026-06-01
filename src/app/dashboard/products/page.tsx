@@ -1,16 +1,5 @@
-import { fetchProducts } from "@/lib/data";
-import { ProductClient } from "./product-client";
+import { redirect } from "next/navigation";
 
-export default async function ProductsPage() {
-  const { data, error } = await fetchProducts();
-
-  if (error) {
-    return (
-      <div className="rounded-md border border-destructive p-4 text-destructive">
-        Failed to load products: {error}
-      </div>
-    );
-  }
-
-  return <ProductClient products={data} />;
+export default function ProductsPage() {
+  redirect("/dashboard/products/all");
 }

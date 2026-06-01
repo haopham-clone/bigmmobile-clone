@@ -8,6 +8,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "fs";
 import { resolve } from "path";
+import { resolveCategorySlug } from "../src/lib/categories";
 
 interface CrawlerProduct {
   name: string;
@@ -122,10 +123,12 @@ function mapProduct(row: CrawlerProduct) {
     storage_ram: extractStorageRam(row.name),
     color: extractColor(row.name),
     condition: extractCondition(row.name, row.category),
+    category: resolveCategorySlug(row.category, row.name),
     sku: slugFromUrl(row.product_url),
     cost_price: 0,
     selling_price: parsePrice(row.price),
     quantity: 0,
+    is_active: true,
   };
 }
 
@@ -162,15 +165,28 @@ async function main() {
 
   console.log(`Seeding ${unique.length} products (${crawlerProducts.length} raw rows)...`);
 
-  let inserted = 0;
-  let skipped = 0;
+  let upserted = 0;
 
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
-    const { error, count } = await supabase.from("products").upsert(batch, {
+    const skus = batch.map((p) => p.sku);
+
+    const { data: existing } = await supabase
+      .from("products")
+      .select("sku, quantity")
+      .in("sku", skus);
+
+    const qtyBySku = new Map(
+      (existing ?? []).map((row) => [row.sku as string, row.quantity as number])
+    );
+
+    const merged = batch.map((p) => ({
+      ...p,
+      quantity: qtyBySku.get(p.sku) ?? p.quantity,
+    }));
+
+    const { error } = await supabase.from("products").upsert(merged, {
       onConflict: "sku",
-      ignoreDuplicates: true,
-      count: "exact",
     });
 
     if (error) {
@@ -178,12 +194,11 @@ async function main() {
       process.exit(1);
     }
 
-    inserted += count ?? 0;
-    skipped += batch.length - (count ?? 0);
-    console.log(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: processed ${batch.length} rows`);
+    upserted += batch.length;
+    console.log(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: upserted ${batch.length} rows`);
   }
 
-  console.log(`Done. Inserted (new): ~${inserted}, skipped duplicates: ~${skipped}`);
+  console.log(`Done. Upserted ${upserted} products (categories backfilled, quantities preserved).`);
 }
 
 main().catch((err) => {

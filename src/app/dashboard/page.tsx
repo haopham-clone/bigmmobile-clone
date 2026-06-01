@@ -19,28 +19,28 @@ export default async function DashboardPage() {
 
   const kpis = [
     {
-      title: "Tổng số lượng",
+      title: "Total units",
       value: totalUnits.toLocaleString("en-AU"),
-      description: "Tổng đơn vị trong kho",
+      description: "Units in stock",
       icon: Package,
     },
     {
-      title: "Giá trị tồn kho",
+      title: "Inventory value",
       value: formatAUD(inventoryValue),
-      description: "Tính theo giá vốn × số lượng",
+      description: "Cost price × quantity",
       icon: DollarSign,
     },
     {
-      title: "Cảnh báo tồn thấp",
+      title: "Low stock alert",
       value: lowStockCount.toString(),
-      description: "Sản phẩm có 1–2 đơn vị",
+      description: "Products with 1–2 units",
       icon: AlertTriangle,
       highlight: lowStockCount > 0,
     },
     {
-      title: "Tổng SKU",
+      title: "Total SKUs",
       value: totalSkus.toLocaleString("en-AU"),
-      description: "Số dòng sản phẩm",
+      description: "Product line count",
       icon: Hash,
     },
   ];
@@ -48,8 +48,8 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Tổng quan</h1>
-        <p className="text-muted-foreground">Thống kê kho hàng hiện tại</p>
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <p className="text-muted-foreground">Current inventory overview</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -75,7 +75,7 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <AlertTriangle className="h-4 w-4 text-destructive" />
-              Sản phẩm tồn kho thấp
+              Low stock products
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -89,7 +89,7 @@ export default async function DashboardPage() {
                     {item.brand} {item.model}{" "}
                     <span className="text-muted-foreground">({item.sku})</span>
                   </span>
-                  <Badge variant="destructive">{item.quantity} còn lại</Badge>
+                  <Badge variant="destructive">{item.quantity} left</Badge>
                 </li>
               ))}
             </ul>

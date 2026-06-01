@@ -1,4 +1,4 @@
-# Kiểm Kho — Internal Mobile Device Inventory
+# Inventory — Internal Mobile Device Inventory
 
 Production MVP for tracking inventory levels, stock adjustments, and audit logs. Product catalog is seeded from [BigM Mobile](https://bigmmobile.com.au/) public shop data via the included crawler.
 
@@ -134,10 +134,39 @@ bigmmobile-clone/
 ## Features
 
 - **Auth**: Email/password login; middleware protects `/dashboard/*`
+- **Category navigation**: Sidebar tabs for All Products, Phones, Cases, Tablets, Parts, Accessories, Repair, Other
 - **Dashboard KPIs**: Total units, inventory value (cost × qty), low-stock alert (qty 1–2), SKU count
 - **Products table**: Search, brand filter, low-stock toggle, +/- stock adjustment with toast feedback
-- **Add product**: Dialog form with validation; writes `INITIAL_ADD` to `stock_logs` when qty > 0
+- **Add product**: Dialog form with category + validation; writes `INITIAL_ADD` to `stock_logs` when qty > 0
 - **Audit trail**: Every adjustment writes to `stock_logs` (`ADJUSTED_UP` / `ADJUSTED_DOWN`)
+
+### Category routes
+
+| Sidebar link | URL |
+|--------------|-----|
+| All Products | `/dashboard/products/all` |
+| Phones | `/dashboard/products/phones` |
+| Cases | `/dashboard/products/cases` |
+| Tablets | `/dashboard/products/tablets` |
+| Parts | `/dashboard/products/parts` |
+| Accessories | `/dashboard/products/accessories` |
+| Repair | `/dashboard/products/repair` |
+| Other | `/dashboard/products/other` |
+
+Crawler categories (~409 raw labels) are mapped into these 7 groups via [`src/lib/categories.ts`](src/lib/categories.ts).
+
+### Backfill categories after upgrade
+
+If you already seeded products before categories were added:
+
+```bash
+# Apply migration (or full reset)
+supabase migration up
+# OR: npm run db:reset
+
+# Re-import with category mapping (preserves existing stock quantities)
+npm run seed:local
+```
 
 ## Deploy to Vercel
 

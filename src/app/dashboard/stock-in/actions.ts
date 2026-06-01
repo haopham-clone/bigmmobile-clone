@@ -4,8 +4,17 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
+import { searchActiveProducts, fetchProductByIdForSearch } from "@/lib/product-queries";
 import { submitStockReceipt } from "@/lib/stock-receipts";
 import type { StockReceiptInput, StockReceiptLineInput } from "@/types/database";
+
+export async function searchProductsForStockIn(query: string) {
+  return searchActiveProducts(query, 50);
+}
+
+export async function getProductForStockIn(productId: string) {
+  return fetchProductByIdForSearch(productId);
+}
 
 const categoryValues = PRODUCT_CATEGORIES_SELECT.map((c) => c.slug) as [string, ...string[]];
 

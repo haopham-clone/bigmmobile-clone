@@ -49,6 +49,28 @@ export type ProductUpdate = ProductInsert;
 
 export type CategoryCounts = Record<string, number>;
 
+export type ProductSortOption = "updated_desc" | "updated_asc" | "stock_desc" | "stock_asc";
+
+export interface ProductListFilters {
+  categorySlug?: string;
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  brand?: string;
+  sort?: ProductSortOption;
+  lowStockOnly?: boolean;
+  hideZeroStock?: boolean;
+  hideInactive?: boolean;
+}
+
+export interface PaginatedProducts {
+  data: Product[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface StockReceipt {
   id: string;
   user_id: string;

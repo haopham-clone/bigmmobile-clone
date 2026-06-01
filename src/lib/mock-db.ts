@@ -1,6 +1,8 @@
 import type {
   Product,
   ProductInsert,
+  ProductListFilters,
+  ProductSortOption,
   StockAction,
   StockLog,
   StockReceipt,
@@ -9,6 +11,7 @@ import type {
   StockReceiptWithItems,
 } from "@/types/database";
 import { HIDDEN_CATEGORY_SLUGS, SIDEBAR_CATEGORIES } from "@/lib/categories";
+import { productMatchesTokenizedSearch } from "@/lib/search-utils";
 
 const MOCK_USER_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -181,19 +184,109 @@ export function mockGetDashboardData() {
     (p) => !HIDDEN_CATEGORY_SLUGS.has(p.category as never) && p.is_active
   );
   const lowStockItems = products.filter((p) => p.quantity > 0 && p.quantity < 3);
+  const totalUnits = products.reduce((sum, p) => sum + p.quantity, 0);
+  const inventoryValue = products.reduce(
+    (sum, p) => sum + p.quantity * Number(p.cost_price),
+    0
+  );
   return {
-    products: products.map((p) => ({
-      quantity: p.quantity,
-      cost_price: p.cost_price,
-    })),
-    lowStockItems: lowStockItems.map((p) => ({
+    totalSkus: products.length,
+    totalUnits,
+    inventoryValue,
+    lowStockItems: lowStockItems.slice(0, 50).map((p) => ({
       id: p.id,
       brand: p.brand,
       model: p.model,
       sku: p.sku,
       quantity: p.quantity,
     })),
+    error: undefined as string | undefined,
   };
+}
+
+function filterProductsForList(
+  products: Product[],
+  filters: ProductListFilters
+): Product[] {
+  let list = products;
+  if (filters.categorySlug && filters.categorySlug !== "all") {
+    list = list.filter((p) => p.category === filters.categorySlug);
+  } else {
+    list = list.filter((p) => !HIDDEN_CATEGORY_SLUGS.has(p.category as never));
+  }
+  if (filters.hideInactive !== false) {
+    list = list.filter((p) => p.is_active);
+  }
+  if (filters.hideZeroStock) {
+    list = list.filter((p) => p.quantity > 0);
+  }
+  if (filters.lowStockOnly) {
+    list = list.filter((p) => p.quantity > 0 && p.quantity < 3);
+  }
+  if (filters.brand && filters.brand !== "all") {
+    list = list.filter((p) => p.brand === filters.brand);
+  }
+  const q = (filters.search ?? "").trim();
+  if (q) {
+    list = list.filter((p) =>
+      productMatchesTokenizedSearch(p.brand, p.model, p.sku, q)
+    );
+  }
+  return list;
+}
+
+function sortProductsForList(list: Product[], sort: ProductSortOption = "updated_desc"): Product[] {
+  const sorted = [...list];
+  switch (sort) {
+    case "updated_asc":
+      return sorted.sort(
+        (a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+      );
+    case "stock_desc":
+      return sorted.sort((a, b) => b.quantity - a.quantity || a.model.localeCompare(b.model));
+    case "stock_asc":
+      return sorted.sort((a, b) => a.quantity - b.quantity || a.model.localeCompare(b.model));
+    case "updated_desc":
+    default:
+      return sorted.sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
+  }
+}
+
+export function mockListProductsPaginated(filters: ProductListFilters) {
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = Math.min(100, Math.max(10, filters.pageSize ?? 50));
+  const filtered = sortProductsForList(
+    filterProductsForList(getStore().products, filters),
+    filters.sort
+  );
+  const total = filtered.length;
+  const from = (page - 1) * pageSize;
+  const data = filtered.slice(from, from + pageSize);
+  return {
+    data,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+export function mockGetProductBrands(categorySlug?: string): string[] {
+  const list = filterProductsForList(getStore().products, {
+    categorySlug,
+    hideInactive: true,
+  });
+  return [...new Set(list.map((p) => p.brand))].sort();
+}
+
+export function mockSearchActiveProducts(search: string, limit: number): Product[] {
+  const q = search.trim();
+  return filterProductsForList(getStore().products, {
+    hideInactive: true,
+    search: q,
+  }).slice(0, limit);
 }
 
 export function mockGetProduct(productId: string): Product | null {

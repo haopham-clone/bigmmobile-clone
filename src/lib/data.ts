@@ -102,25 +102,29 @@ export async function fetchDashboardStats() {
   }
 
   const supabase = await createClient();
-  const [productsResult, lowStockResult] = await Promise.all([
-    supabase
-      .from("products")
-      .select("quantity, cost_price")
-      .neq("category", "devices")
-      .eq("is_active", true),
+  const [statsResult, lowStockResult] = await Promise.all([
+    supabase.rpc("dashboard_stats"),
     supabase
       .from("products")
       .select("id, brand, model, sku, quantity")
       .neq("category", "devices")
       .eq("is_active", true)
       .gt("quantity", 0)
-      .lt("quantity", 3),
+      .lt("quantity", 3)
+      .order("quantity", { ascending: true })
+      .limit(50),
   ]);
 
+  const stats = statsResult.data?.[0] as
+    | { total_skus: number; total_units: number; inventory_value: number }
+    | undefined;
+
   return {
-    products: productsResult.data ?? [],
+    totalSkus: Number(stats?.total_skus ?? 0),
+    totalUnits: Number(stats?.total_units ?? 0),
+    inventoryValue: Number(stats?.inventory_value ?? 0),
     lowStockItems: lowStockResult.data ?? [],
-    error: productsResult.error?.message ?? lowStockResult.error?.message,
+    error: statsResult.error?.message ?? lowStockResult.error?.message,
   };
 }
 

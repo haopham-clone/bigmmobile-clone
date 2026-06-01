@@ -3,18 +3,19 @@ import { formatAUD } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Package, DollarSign, AlertTriangle, Hash } from "lucide-react";
-import type { Product } from "@/types/database";
 
 export default async function DashboardPage() {
-  const { products, lowStockItems } = await fetchDashboardStats();
+  const { totalUnits, inventoryValue, totalSkus, lowStockItems, error } =
+    await fetchDashboardStats();
 
-  const rows = products as Pick<Product, "quantity" | "cost_price">[];
-  const totalUnits = rows.reduce((sum, p) => sum + (p.quantity ?? 0), 0);
-  const inventoryValue = rows.reduce(
-    (sum, p) => sum + (p.quantity ?? 0) * Number(p.cost_price ?? 0),
-    0
-  );
-  const totalSkus = rows.length;
+  if (error) {
+    return (
+      <div className="rounded-md border border-destructive p-4 text-destructive">
+        Failed to load dashboard: {error}
+      </div>
+    );
+  }
+
   const lowStockCount = lowStockItems.length;
 
   const kpis = [

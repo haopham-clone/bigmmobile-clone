@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Search, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Loader2, Search, X } from "lucide-react";
 import type { Product } from "@/types/database";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import {
+  getProductForStockIn,
+  searchProductsForStockIn,
+} from "@/app/dashboard/stock-in/actions";
 
 function formatProductLabel(p: Product): string {
   const cat =
@@ -13,66 +17,85 @@ function formatProductLabel(p: Product): string {
   return `[${cat}] ${p.brand} — ${p.model} (${p.sku}) · Qty ${p.quantity}`;
 }
 
-function matchesProduct(p: Product, query: string): boolean {
-  const q = query.toLowerCase();
-  const catLabel =
-    PRODUCT_CATEGORIES_SELECT.find((c) => c.slug === p.category)?.label ?? p.category;
-  return (
-    p.brand.toLowerCase().includes(q) ||
-    p.model.toLowerCase().includes(q) ||
-    p.sku.toLowerCase().includes(q) ||
-    p.category.toLowerCase().includes(q) ||
-    catLabel.toLowerCase().includes(q)
-  );
-}
-
 interface ProductSearchSelectProps {
-  products: Product[];
   value: string;
   onChange: (productId: string) => void;
   placeholder?: string;
 }
 
 export function ProductSearchSelect({
-  products,
   value,
   onChange,
   placeholder = "Type to search brand, model, SKU...",
 }: ProductSearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Product[]>([]);
+  const [selected, setSelected] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selected = products.find((p) => p.id === value);
+  useEffect(() => {
+    if (!value) {
+      setSelected(null);
+      return;
+    }
+    if (selected?.id === value) return;
 
-  const filtered = useMemo(() => {
-    const q = query.trim();
-    if (q.length < 1) return [];
-    return products.filter((p) => matchesProduct(p, q)).slice(0, 100);
-  }, [products, query]);
+    let cancelled = false;
+    getProductForStockIn(value).then((p) => {
+      if (!cancelled && p) setSelected(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [value, selected?.id]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
         setQuery("");
+        setResults([]);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function handleSelect(productId: string) {
-    onChange(productId);
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 1) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      const { data, error } = await searchProductsForStockIn(term);
+      if (!error) setResults(data);
+      setLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  function handleSelect(product: Product) {
+    setSelected(product);
+    onChange(product.id);
     setQuery("");
+    setResults([]);
     setOpen(false);
     inputRef.current?.blur();
   }
 
   function handleClear() {
+    setSelected(null);
     onChange("");
     setQuery("");
+    setResults([]);
     setOpen(false);
     inputRef.current?.focus();
   }
@@ -89,13 +112,14 @@ export function ProductSearchSelect({
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
-            if (value) onChange("");
+            if (value) {
+              onChange("");
+              setSelected(null);
+            }
           }}
           onFocus={() => {
             setOpen(true);
-            if (selected) {
-              setQuery("");
-            }
+            if (selected) setQuery("");
           }}
           placeholder={placeholder}
           className="pl-9 pr-9"
@@ -117,37 +141,37 @@ export function ProductSearchSelect({
         <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md">
           {query.trim().length < 1 ? (
             <p className="p-3 text-sm text-muted-foreground">
-              Type to search {products.length.toLocaleString("en-AU")} active products
+              Type to search active products (server-side)
             </p>
-          ) : filtered.length === 0 ? (
-            <p className="p-3 text-sm text-muted-foreground">No products match &quot;{query}&quot;</p>
+          ) : loading ? (
+            <p className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Searching...
+            </p>
+          ) : results.length === 0 ? (
+            <p className="p-3 text-sm text-muted-foreground">
+              No products match &quot;{query}&quot;
+            </p>
           ) : (
-            <>
-              {filtered.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={cn(
-                    "flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground",
-                    p.id === value && "bg-accent text-accent-foreground"
-                  )}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleSelect(p.id)}
-                >
-                  {p.id === value ? (
-                    <Check className="mt-0.5 h-4 w-4 shrink-0" />
-                  ) : (
-                    <span className="w-4 shrink-0" />
-                  )}
-                  <span>{formatProductLabel(p)}</span>
-                </button>
-              ))}
-              {filtered.length === 100 && (
-                <p className="border-t p-2 text-xs text-muted-foreground">
-                  Showing first 100 matches. Refine your search for more.
-                </p>
-              )}
-            </>
+            results.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={cn(
+                  "flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground",
+                  p.id === value && "bg-accent text-accent-foreground"
+                )}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelect(p)}
+              >
+                {p.id === value ? (
+                  <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                ) : (
+                  <span className="w-4 shrink-0" />
+                )}
+                <span>{formatProductLabel(p)}</span>
+              </button>
+            ))
           )}
         </div>
       )}

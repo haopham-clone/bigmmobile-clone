@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronRight, Minus, Plus, Search } from "lucide-react";
-import type { Product } from "@/types/database";
+import { ChevronLeft, ChevronRight, Minus, Plus, Search } from "lucide-react";
+import type { Product, ProductSortOption } from "@/types/database";
 import { formatAUD } from "@/lib/utils";
 import { adjustStock } from "./actions";
 import { AddProductDialog } from "./add-product-dialog";
@@ -32,48 +32,64 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type SortOption = "updated_desc" | "updated_asc" | "stock_desc" | "stock_asc";
+export interface ProductListUiFilters {
+  search: string;
+  brand: string;
+  sort: ProductSortOption;
+  lowStockOnly: boolean;
+  hideZeroStock: boolean;
+  hideInactive: boolean;
+}
 
 interface ProductClientProps {
   products: Product[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  brands: string[];
   activeCategory: string;
   categoryLabel: string;
   defaultCategory: string;
+  initialFilters: ProductListUiFilters;
 }
 
-function sortProducts(list: Product[], sortBy: SortOption): Product[] {
-  const sorted = [...list];
-  switch (sortBy) {
-    case "updated_asc":
-      return sorted.sort(
-        (a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
-      );
-    case "stock_desc":
-      return sorted.sort((a, b) => b.quantity - a.quantity || a.model.localeCompare(b.model));
-    case "stock_asc":
-      return sorted.sort((a, b) => a.quantity - b.quantity || a.model.localeCompare(b.model));
-    case "updated_desc":
-    default:
-      return sorted.sort(
-        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      );
-  }
+function buildQueryString(
+  base: ProductListUiFilters & { page: number }
+): string {
+  const params = new URLSearchParams();
+  if (base.page > 1) params.set("page", String(base.page));
+  if (base.search.trim()) params.set("q", base.search.trim());
+  if (base.brand && base.brand !== "all") params.set("brand", base.brand);
+  if (base.sort !== "updated_desc") params.set("sort", base.sort);
+  if (base.lowStockOnly) params.set("lowStock", "1");
+  if (base.hideZeroStock) params.set("hideZero", "1");
+  if (!base.hideInactive) params.set("hideInactive", "0");
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
 }
 
 export function ProductClient({
   products: initialProducts,
+  total,
+  page,
+  pageSize,
+  totalPages,
+  brands,
   activeCategory,
   categoryLabel,
   defaultCategory,
+  initialFilters,
 }: ProductClientProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [products, setProducts] = useState(initialProducts);
-  const [search, setSearch] = useState("");
-  const [brandFilter, setBrandFilter] = useState("all");
-  const [sortBy, setSortBy] = useState<SortOption>("updated_desc");
-  const [lowStockOnly, setLowStockOnly] = useState(false);
-  const [hideZeroStock, setHideZeroStock] = useState(false);
-  const [hideInactive, setHideInactive] = useState(true);
+  const [searchInput, setSearchInput] = useState(initialFilters.search);
+  const [brandFilter, setBrandFilter] = useState(initialFilters.brand);
+  const [sortBy, setSortBy] = useState<ProductSortOption>(initialFilters.sort);
+  const [lowStockOnly, setLowStockOnly] = useState(initialFilters.lowStockOnly);
+  const [hideZeroStock, setHideZeroStock] = useState(initialFilters.hideZeroStock);
+  const [hideInactive, setHideInactive] = useState(initialFilters.hideInactive);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -81,79 +97,78 @@ export function ProductClient({
     setProducts(initialProducts);
   }, [initialProducts]);
 
-  const brands = useMemo(() => {
-    const set = new Set(products.map((p) => p.brand).filter(Boolean));
-    return Array.from(set).sort();
-  }, [products]);
+  useEffect(() => {
+    setSearchInput(initialFilters.search);
+    setBrandFilter(initialFilters.brand);
+    setSortBy(initialFilters.sort);
+    setLowStockOnly(initialFilters.lowStockOnly);
+    setHideZeroStock(initialFilters.hideZeroStock);
+    setHideInactive(initialFilters.hideInactive);
+  }, [initialFilters]);
 
-  const filtered = useMemo(() => {
-    const list = products.filter((p) => {
-      const q = search.toLowerCase();
-      const matchesSearch =
-        !q ||
-        p.brand.toLowerCase().includes(q) ||
-        p.model.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q);
-      const matchesBrand = brandFilter === "all" || p.brand === brandFilter;
-      const matchesLowStock =
-        !lowStockOnly || (p.quantity > 0 && p.quantity < 3);
-      const matchesZeroStock = !hideZeroStock || p.quantity > 0;
-      const matchesActive = !hideInactive || p.is_active;
-      return (
-        matchesSearch &&
-        matchesBrand &&
-        matchesLowStock &&
-        matchesZeroStock &&
-        matchesActive
-      );
-    });
+  const pushFilters = useCallback(
+    (overrides: Partial<ProductListUiFilters & { page: number }>) => {
+      const next = {
+        search: overrides.search ?? searchInput,
+        brand: overrides.brand ?? brandFilter,
+        sort: overrides.sort ?? sortBy,
+        lowStockOnly: overrides.lowStockOnly ?? lowStockOnly,
+        hideZeroStock: overrides.hideZeroStock ?? hideZeroStock,
+        hideInactive: overrides.hideInactive ?? hideInactive,
+        page: overrides.page ?? 1,
+      };
+      router.push(`${pathname}${buildQueryString(next)}`);
+    },
+    [
+      router,
+      pathname,
+      searchInput,
+      brandFilter,
+      sortBy,
+      lowStockOnly,
+      hideZeroStock,
+      hideInactive,
+    ]
+  );
 
-    return sortProducts(list, sortBy);
-  }, [
-    products,
-    search,
-    brandFilter,
-    sortBy,
-    lowStockOnly,
-    hideZeroStock,
-    hideInactive,
-  ]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchInput !== initialFilters.search) {
+        pushFilters({ search: searchInput, page: 1 });
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput, initialFilters.search, pushFilters]);
 
   function handleAdjust(product: Product, delta: number) {
     const prevQty = product.quantity;
     const optimisticQty = Math.max(0, prevQty + delta);
-
     if (optimisticQty === prevQty) return;
 
     setProducts((prev) =>
-      prev.map((p) =>
-        p.id === product.id ? { ...p, quantity: optimisticQty } : p
-      )
+      prev.map((p) => (p.id === product.id ? { ...p, quantity: optimisticQty } : p))
     );
     setPendingId(product.id);
 
     startTransition(async () => {
       const result = await adjustStock(product.id, delta);
       setPendingId(null);
-
       if (result.error) {
         setProducts((prev) =>
-          prev.map((p) =>
-            p.id === product.id ? { ...p, quantity: prevQty } : p
-          )
+          prev.map((p) => (p.id === product.id ? { ...p, quantity: prevQty } : p))
         );
         toast.error(result.error);
         return;
       }
-
       toast.success(
-        delta > 0
-          ? `Stock increased: ${product.sku}`
-          : `Stock decreased: ${product.sku}`
+        delta > 0 ? `Stock increased: ${product.sku}` : `Stock decreased: ${product.sku}`
       );
       router.refresh();
     });
   }
+
+  const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const showingTo = Math.min(page * pageSize, total);
 
   return (
     <div className="space-y-6">
@@ -161,9 +176,13 @@ export function ProductClient({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{categoryLabel}</h1>
           <p className="text-muted-foreground">
-            {filtered.length} / {products.length} products
-            {activeCategory !== "all" && (
-              <span className="text-muted-foreground"> in this category</span>
+            {total.toLocaleString("en-AU")} products
+            {activeCategory !== "all" && " in this category"}
+            {total > 0 && (
+              <span>
+                {" "}
+                · showing {showingFrom}–{showingTo}
+              </span>
             )}
           </p>
         </div>
@@ -176,12 +195,18 @@ export function ProductClient({
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search by brand, model, SKU..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-9"
             />
           </div>
-          <Select value={brandFilter} onValueChange={setBrandFilter}>
+          <Select
+            value={brandFilter}
+            onValueChange={(v) => {
+              setBrandFilter(v);
+              pushFilters({ brand: v, page: 1 });
+            }}
+          >
             <SelectTrigger className="w-full lg:w-44">
               <SelectValue placeholder="Brand" />
             </SelectTrigger>
@@ -194,7 +219,13 @@ export function ProductClient({
               ))}
             </SelectContent>
           </Select>
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+          <Select
+            value={sortBy}
+            onValueChange={(v) => {
+              setSortBy(v as ProductSortOption);
+              pushFilters({ sort: v as ProductSortOption, page: 1 });
+            }}
+          >
             <SelectTrigger className="w-full lg:w-52">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
@@ -212,7 +243,10 @@ export function ProductClient({
             <Switch
               id="low-stock"
               checked={lowStockOnly}
-              onCheckedChange={setLowStockOnly}
+              onCheckedChange={(v) => {
+                setLowStockOnly(v);
+                pushFilters({ lowStockOnly: v, page: 1 });
+              }}
             />
             <Label htmlFor="low-stock" className="text-sm whitespace-nowrap">
               Low stock (&lt;3)
@@ -222,7 +256,10 @@ export function ProductClient({
             <Switch
               id="hide-zero"
               checked={hideZeroStock}
-              onCheckedChange={setHideZeroStock}
+              onCheckedChange={(v) => {
+                setHideZeroStock(v);
+                pushFilters({ hideZeroStock: v, page: 1 });
+              }}
             />
             <Label htmlFor="hide-zero" className="text-sm whitespace-nowrap">
               Hide zero stock
@@ -232,7 +269,10 @@ export function ProductClient({
             <Switch
               id="hide-inactive"
               checked={hideInactive}
-              onCheckedChange={setHideInactive}
+              onCheckedChange={(v) => {
+                setHideInactive(v);
+                pushFilters({ hideInactive: v, page: 1 });
+              }}
             />
             <Label htmlFor="hide-inactive" className="text-sm whitespace-nowrap">
               Hide inactive
@@ -260,16 +300,15 @@ export function ProductClient({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.length === 0 ? (
+            {products.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={12} className="h-24 text-center text-muted-foreground">
                   No matching products
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((product) => {
-                const isLowStock =
-                  product.quantity > 0 && product.quantity < 3;
+              products.map((product) => {
+                const isLowStock = product.quantity > 0 && product.quantity < 3;
                 const isPending = pendingId === product.id;
                 const detailHref = `/dashboard/products/item/${product.id}`;
 
@@ -363,12 +402,7 @@ export function ProductClient({
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          asChild
-                        >
+                        <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
                           <Link href={detailHref} aria-label="View product details">
                             <ChevronRight className="h-4 w-4" />
                           </Link>
@@ -382,6 +416,34 @@ export function ProductClient({
           </TableBody>
         </Table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => pushFilters({ page: page - 1 })}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => pushFilters({ page: page + 1 })}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

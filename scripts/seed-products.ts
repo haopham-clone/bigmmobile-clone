@@ -2,11 +2,13 @@
  * One-time / idempotent seed: maps bigm-crawler JSON → products table.
  * Requires SUPABASE_SERVICE_ROLE_KEY (never use in Next.js client).
  *
- * Usage: cp .env.local.example .env.local && npm run seed
+ * Usage: clone private bigm-crawler next to this repo, then npm run seed:local
+ *
+ * Data path: BIGM_PRODUCTS_JSON env, or ../bigm-crawler/data/bigm_products.json
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { resolveCategorySlug } from "../src/lib/categories";
 
@@ -143,10 +145,7 @@ async function main() {
     process.exit(1);
   }
 
-  const jsonPath = resolve(
-    process.cwd(),
-    "bigm-crawler/data/bigm_products.json"
-  );
+  const jsonPath = resolveCrawlerJsonPath();
   const raw = readFileSync(jsonPath, "utf-8");
   const crawlerProducts = JSON.parse(raw) as CrawlerProduct[];
 

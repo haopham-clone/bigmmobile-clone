@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
-import type { Product } from "@/types/database";
 import type { CategorySlug } from "@/lib/categories";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
 import { submitStockReceiptAction } from "./actions";
@@ -59,11 +58,7 @@ function newLine(mode: LineMode = "existing"): LineRow {
   };
 }
 
-interface StockInClientProps {
-  products: Product[];
-}
-
-export function StockInClient({ products }: StockInClientProps) {
+export function StockInClient() {
   const router = useRouter();
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [note, setNote] = useState("");
@@ -216,7 +211,6 @@ export function StockInClient({ products }: StockInClientProps) {
                   <div className="space-y-2 sm:col-span-2">
                     <Label>Product</Label>
                     <ProductSearchSelect
-                      products={products}
                       value={line.product_id}
                       onChange={(productId) => updateLine(line.key, { product_id: productId })}
                     />

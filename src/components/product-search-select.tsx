@@ -33,6 +33,7 @@ export function ProductSearchSelect({
   const [results, setResults] = useState<Product[]>([]);
   const [selected, setSelected] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -69,14 +70,28 @@ export function ProductSearchSelect({
     if (term.length < 1) {
       setResults([]);
       setLoading(false);
+      setErrorMessage(null);
       return;
     }
 
     setLoading(true);
+    setErrorMessage(null);
     const timer = setTimeout(async () => {
-      const { data, error } = await searchProductsForStockIn(term);
-      if (!error) setResults(data);
-      setLoading(false);
+      try {
+        const { data, error } = await searchProductsForStockIn(term);
+        if (error) {
+          setResults([]);
+          setErrorMessage(error);
+        } else {
+          setResults(data);
+          setErrorMessage(null);
+        }
+      } catch {
+        setResults([]);
+        setErrorMessage("Product search failed. Please try again.");
+      } finally {
+        setLoading(false);
+      }
     }, 300);
 
     return () => clearTimeout(timer);
@@ -87,6 +102,7 @@ export function ProductSearchSelect({
     onChange(product.id);
     setQuery("");
     setResults([]);
+    setErrorMessage(null);
     setOpen(false);
     inputRef.current?.blur();
   }
@@ -96,6 +112,7 @@ export function ProductSearchSelect({
     onChange("");
     setQuery("");
     setResults([]);
+    setErrorMessage(null);
     setOpen(false);
     inputRef.current?.focus();
   }
@@ -148,6 +165,8 @@ export function ProductSearchSelect({
               <Loader2 className="h-4 w-4 animate-spin" />
               Searching...
             </p>
+          ) : errorMessage ? (
+            <p className="p-3 text-sm text-destructive">{errorMessage}</p>
           ) : results.length === 0 ? (
             <p className="p-3 text-sm text-muted-foreground">
               No products match &quot;{query}&quot;

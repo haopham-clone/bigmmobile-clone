@@ -6,14 +6,24 @@ import { getSessionUser } from "@/lib/auth";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
 import { searchActiveProducts, fetchProductByIdForSearch } from "@/lib/product-queries";
 import { submitStockReceipt } from "@/lib/stock-receipts";
-import type { StockReceiptInput, StockReceiptLineInput } from "@/types/database";
+import type { StockReceiptInput } from "@/types/database";
 
 export async function searchProductsForStockIn(query: string) {
-  return searchActiveProducts(query, 50);
+  try {
+    return await searchActiveProducts(query, 50);
+  } catch (error) {
+    console.error("Stock-in product search failed", error);
+    return { data: [], error: "Product search failed. Please try again." };
+  }
 }
 
 export async function getProductForStockIn(productId: string) {
-  return fetchProductByIdForSearch(productId);
+  try {
+    return await fetchProductByIdForSearch(productId);
+  } catch (error) {
+    console.error("Stock-in product lookup failed", error);
+    return null;
+  }
 }
 
 const categoryValues = PRODUCT_CATEGORIES_SELECT.map((c) => c.slug) as [string, ...string[]];
@@ -66,5 +76,3 @@ export async function submitStockReceiptAction(payload: StockReceiptInput) {
 
   return { success: true, receiptId: result.receiptId };
 }
-
-export type { StockReceiptLineInput };

@@ -115,6 +115,28 @@ Log in with any email/password. Data lives in memory and resets on restart.
 
 ---
 
+## Crawler data (private repo)
+
+Product catalog JSON/CSV lives in a **separate private repo** `bigm-crawler` so this app repo stays safe to publish.
+
+Clone both repos as siblings:
+
+```bash
+git clone git@github.com:YOU/bigmmobile-clone.git
+git clone git@github.com:YOU/bigm-crawler.git   # private
+```
+
+Then run the crawler (optional) or use existing `data/bigm_products.json`, and seed:
+
+```bash
+cd bigmmobile-clone
+npm run seed:local    # reads ../bigm-crawler/data/bigm_products.json
+```
+
+Override path: `BIGM_PRODUCTS_JSON=/path/to/bigm_products.json npm run seed:local`
+
+---
+
 ## Project structure
 
 ```
@@ -126,8 +148,7 @@ bigmmobile-clone/
 │   ├── config.toml         # Local stack config
 │   ├── migrations/         # Schema + RLS
 │   └── seed.sql            # Sample rows on db reset
-├── bigm-crawler/
-├── scripts/
+├── scripts/                # seed reads ../bigm-crawler (private repo)
 └── src/
 ```
 

@@ -134,6 +134,25 @@ function mapProduct(row: CrawlerProduct) {
   };
 }
 
+function resolveCrawlerJsonPath(): string {
+  if (process.env.BIGM_PRODUCTS_JSON) {
+    return resolve(process.env.BIGM_PRODUCTS_JSON);
+  }
+
+  const defaultPath = resolve(
+    process.cwd(),
+    "../bigm-crawler/data/bigm_products.json"
+  );
+  if (existsSync(defaultPath)) return defaultPath;
+
+  console.error(
+    "Crawler data not found.\n" +
+      "  Clone the private bigm-crawler repo as a sibling folder, or set BIGM_PRODUCTS_JSON.\n" +
+      `  Expected: ${defaultPath}`
+  );
+  process.exit(1);
+}
+
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

@@ -1,0 +1,100 @@
+import type { CategorySlug } from "@/lib/categories";
+
+export type StockAction = "INITIAL_ADD" | "ADJUSTED_UP" | "ADJUSTED_DOWN" | "RECEIVED_STOCK";
+
+export interface Product {
+  id: string;
+  image_url: string | null;
+  brand: string;
+  model: string;
+  storage_ram: string | null;
+  color: string | null;
+  condition: string | null;
+  category: CategorySlug | string;
+  sku: string;
+  cost_price: number;
+  selling_price: number;
+  quantity: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StockLog {
+  id: string;
+  product_id: string;
+  user_id: string;
+  action: StockAction;
+  quantity_changed: number;
+  new_quantity: number;
+  created_at: string;
+}
+
+export interface ProductInsert {
+  image_url?: string | null;
+  brand: string;
+  model: string;
+  storage_ram?: string | null;
+  color?: string | null;
+  condition?: string | null;
+  category: CategorySlug | string;
+  sku: string;
+  cost_price: number;
+  selling_price: number;
+  quantity: number;
+  is_active?: boolean;
+}
+
+export type ProductUpdate = ProductInsert;
+
+export type CategoryCounts = Record<string, number>;
+
+export interface StockReceipt {
+  id: string;
+  user_id: string;
+  invoice_number: string | null;
+  note: string | null;
+  total_quantity: number;
+  created_at: string;
+}
+
+export interface StockReceiptItem {
+  id: string;
+  receipt_id: string;
+  product_id: string;
+  sku: string;
+  brand: string;
+  model: string;
+  category: string;
+  quantity_received: number;
+  previous_quantity: number;
+  new_quantity: number;
+  created_at: string;
+}
+
+export interface StockReceiptWithItems extends StockReceipt {
+  items: StockReceiptItem[];
+}
+
+export interface StockReceiptLineInput {
+  mode: "existing" | "new";
+  product_id?: string;
+  quantity_received: number;
+  // new product fields
+  brand?: string;
+  model?: string;
+  sku?: string;
+  category?: string;
+  cost_price?: number;
+  selling_price?: number;
+  storage_ram?: string | null;
+  color?: string | null;
+  condition?: string | null;
+  image_url?: string | null;
+}
+
+export interface StockReceiptInput {
+  invoice_number?: string | null;
+  note?: string | null;
+  lines: StockReceiptLineInput[];
+}

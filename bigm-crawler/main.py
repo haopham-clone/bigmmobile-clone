@@ -17,14 +17,13 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 BASE_URL = "https://bigmmobile.com.au/"
-CATEGORY_URL = urljoin(BASE_URL, "product-category/tablet-cases/")
-CATEGORY_NAME = "Tablet Cases"
+SHOP_URL = urljoin(BASE_URL, "shop/")
 SOURCE_NAME = "BigM Mobile"
-MAX_PAGES = 100
+MAX_PAGES = 1000
 REQUEST_TIMEOUT_SECONDS = 30
 DATA_DIR = Path(__file__).resolve().parent / "data"
-CSV_PATH = DATA_DIR / "bigm_tablet_cases.csv"
-JSON_PATH = DATA_DIR / "bigm_tablet_cases.json"
+CSV_PATH = DATA_DIR / "bigm_products.csv"
+JSON_PATH = DATA_DIR / "bigm_products.json"
 FIELD_NAMES = [
     "name",
     "price",
@@ -69,10 +68,10 @@ def create_session() -> requests.Session:
 
 
 def build_page_url(page_number: int) -> str:
-    """Build the category URL for a page number."""
+    """Build the shop URL for a page number."""
     if page_number <= 1:
-        return CATEGORY_URL
-    return urljoin(CATEGORY_URL, f"page/{page_number}/")
+        return SHOP_URL
+    return urljoin(SHOP_URL, f"page/{page_number}/")
 
 
 def fetch_page(session: requests.Session, url: str) -> str | None:
@@ -121,6 +120,15 @@ def extract_name(card: Tag) -> str | None:
         if name:
             return name
     return None
+
+
+def extract_category(card: Tag) -> str | None:
+    """Extract the first public category label shown on a product card."""
+    category = card.select_one(".wd-product-cats a, .posted_in a")
+    if category is None:
+        return None
+    value = " ".join(category.get_text(" ", strip=True).split())
+    return value or None
 
 
 def _find_public_price(text: str) -> str | None:
@@ -199,7 +207,7 @@ def parse_products_from_page(html: str) -> list[dict[str, Any]]:
                 "price": extract_price(card),
                 "product_url": product_url,
                 "image_url": extract_image_url(card),
-                "category": CATEGORY_NAME,
+                "category": extract_category(card),
                 "source": SOURCE_NAME,
                 "crawled_at": crawled_at,
             }
@@ -224,7 +232,7 @@ def save_to_json(products: list[dict[str, Any]], output_path: Path = JSON_PATH) 
 
 
 def main() -> None:
-    """Crawl all currently available public Tablet Cases category pages."""
+    """Crawl all currently available public shop pages."""
     session = create_session()
     products_by_url: dict[str, dict[str, Any]] = {}
 

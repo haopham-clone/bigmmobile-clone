@@ -30,6 +30,7 @@ interface LineRow {
   product_id: string;
   quantity_received: number;
   brand: string;
+  model_type: string;
   model: string;
   sku: string;
   category: CategorySlug | string;
@@ -47,6 +48,7 @@ function newLine(mode: LineMode = "existing"): LineRow {
     product_id: "",
     quantity_received: 1,
     brand: "",
+    model_type: "",
     model: "",
     sku: "",
     category: PRODUCT_CATEGORIES_SELECT[0]?.slug ?? "other",
@@ -91,6 +93,7 @@ export function StockInClient() {
           mode: "new" as const,
           quantity_received: line.quantity_received,
           brand: line.brand.trim(),
+          model_type: line.model_type.trim() || undefined,
           model: line.model.trim(),
           sku: line.sku.trim(),
           category: line.category,
@@ -269,6 +272,14 @@ export function StockInClient() {
                     <Input
                       value={line.model}
                       onChange={(e) => updateLine(line.key, { model: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Model type</Label>
+                    <Input
+                      value={line.model_type}
+                      onChange={(e) => updateLine(line.key, { model_type: e.target.value })}
+                      placeholder="iPhone 17"
                     />
                   </div>
                   <div className="space-y-2">

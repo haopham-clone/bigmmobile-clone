@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Minus, Plus, Search } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, Search } from "lucide-react";
 import type { Product, ProductSortOption } from "@/types/database";
 import { formatAUD } from "@/lib/utils";
 import { adjustStock } from "./actions";
@@ -54,6 +54,14 @@ interface ProductClientProps {
   initialFilters: ProductListUiFilters;
 }
 
+interface ProductGroup {
+  key: string;
+  label: string;
+  products: Product[];
+}
+
+const SEARCH_DEBOUNCE_MS = 2000;
+
 function buildQueryString(
   base: ProductListUiFilters & { page: number }
 ): string {
@@ -91,6 +99,7 @@ export function ProductClient({
   const [hideZeroStock, setHideZeroStock] = useState(initialFilters.hideZeroStock);
   const [hideInactive, setHideInactive] = useState(initialFilters.hideInactive);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -136,7 +145,7 @@ export function ProductClient({
       if (searchInput !== initialFilters.search) {
         pushFilters({ search: searchInput, page: 1 });
       }
-    }, 400);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput, initialFilters.search, pushFilters]);
 
@@ -169,6 +178,31 @@ export function ProductClient({
 
   const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const showingTo = Math.min(page * pageSize, total);
+  const groupedProducts: ProductGroup[] = [];
+  const groupsByKey = new Map<string, ProductGroup>();
+  for (const product of products) {
+    const key = [
+      product.brand,
+      product.model_type ?? "",
+      product.model,
+      product.category,
+      product.storage_ram ?? "",
+      product.condition ?? "",
+    ].join("||");
+    const label = `${product.brand}||${product.model_type ?? ""}||${product.model}`;
+    const existing = groupsByKey.get(key);
+    if (existing) {
+      existing.products.push(product);
+    } else {
+      const group: ProductGroup = { key, label, products: [product] };
+      groupsByKey.set(key, group);
+      groupedProducts.push(group);
+    }
+  }
+
+  function toggleGroup(groupKey: string) {
+    setExpandedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
+  }
 
   return (
     <div className="space-y-6">
@@ -287,6 +321,7 @@ export function ProductClient({
             <TableRow>
               <TableHead className="w-20">Image</TableHead>
               <TableHead>Brand</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Model</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Storage/RAM</TableHead>
@@ -302,115 +337,170 @@ export function ProductClient({
           <TableBody>
             {products.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={13} className="h-24 text-center text-muted-foreground">
                   No matching products
                 </TableCell>
               </TableRow>
             ) : (
-              products.map((product) => {
-                const isLowStock = product.quantity > 0 && product.quantity < 3;
-                const isPending = pendingId === product.id;
-                const detailHref = `/dashboard/products/item/${product.id}`;
+              groupedProducts.flatMap((group) => {
+                const first = group.products[0];
+                const isExpanded = expandedGroups[group.key] ?? false;
+                const totalQty = group.products.reduce((sum, p) => sum + p.quantity, 0);
+                const activeCount = group.products.filter((p) => p.is_active).length;
+                const hasVariants = group.products.length > 1;
+                const summaryDetailHref = `/dashboard/products/item/${first.id}`;
 
-                return (
-                  <TableRow
-                    key={product.id}
-                    className={`cursor-pointer ${!product.is_active ? "opacity-60" : ""}`}
-                    onClick={() => router.push(detailHref)}
-                  >
+                const summaryRow = (
+                  <TableRow key={`group-${group.key}`} className="bg-muted/30">
                     <TableCell>
-                      <Link
-                        href={detailHref}
-                        className="block"
-                        onClick={(e) => e.stopPropagation()}
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-center"
+                        onClick={() => toggleGroup(group.key)}
+                        aria-label={isExpanded ? "Collapse variants" : "Expand variants"}
+                        disabled={!hasVariants}
                       >
-                        {product.image_url ? (
-                          <div className="relative h-16 w-16 overflow-hidden rounded-md border bg-muted">
-                            <Image
-                              src={product.image_url}
-                              alt={product.model}
-                              fill
-                              className="object-contain p-1"
-                              unoptimized
-                            />
-                          </div>
+                        {hasVariants ? (
+                          isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )
                         ) : (
-                          <div className="h-16 w-16 rounded-md border bg-muted" />
+                          <ChevronRight className="h-4 w-4 opacity-30" />
                         )}
-                      </Link>
+                      </button>
                     </TableCell>
-                    <TableCell className="font-medium">{product.brand}</TableCell>
+                    <TableCell className="font-semibold">{first.brand}</TableCell>
+                    <TableCell>{first.model_type ?? "—"}</TableCell>
                     <TableCell>
-                      <Link
-                        href={detailHref}
-                        className="hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {product.model}
+                      <Link href={summaryDetailHref} className="font-semibold hover:underline">
+                        {first.model}
                       </Link>
+                      <div className="text-xs text-muted-foreground">
+                        {group.products.length} variant{group.products.length === 1 ? "" : "s"}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      {product.is_active ? (
+                      {activeCount === group.products.length ? (
                         <Badge variant="secondary">Active</Badge>
                       ) : (
-                        <Badge variant="outline">Inactive</Badge>
+                        <Badge variant="outline">
+                          {activeCount}/{group.products.length} active
+                        </Badge>
                       )}
                     </TableCell>
-                    <TableCell>{product.storage_ram ?? "—"}</TableCell>
-                    <TableCell>{product.color ?? "—"}</TableCell>
-                    <TableCell>{product.condition ?? "—"}</TableCell>
-                    <TableCell className="font-mono text-xs">{product.sku}</TableCell>
+                    <TableCell>{first.storage_ram ?? "—"}</TableCell>
+                    <TableCell>All colors</TableCell>
+                    <TableCell>{first.condition ?? "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">Grouped</TableCell>
+                    <TableCell className="text-right">{formatAUD(Number(first.cost_price))}</TableCell>
                     <TableCell className="text-right">
-                      {formatAUD(Number(product.cost_price))}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatAUD(Number(product.selling_price))}
+                      {formatAUD(Number(first.selling_price))}
                     </TableCell>
                     <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <span className="font-semibold">{product.quantity}</span>
-                        {isLowStock && (
-                          <Badge variant="destructive" className="text-[10px] px-1">
-                            Low
-                          </Badge>
-                        )}
-                      </div>
+                      <span className="font-semibold">{totalQty}</span>
                     </TableCell>
-                    <TableCell>
-                      <div
-                        className="flex items-center justify-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <EditProductDialog product={product} variant="icon" />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-7 w-7"
-                          disabled={isPending || product.quantity === 0}
-                          onClick={() => handleAdjust(product, -1)}
-                          aria-label="Decrease stock"
-                        >
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-7 w-7"
-                          disabled={isPending}
-                          onClick={() => handleAdjust(product, 1)}
-                          aria-label="Increase stock"
-                        >
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                          <Link href={detailHref} aria-label="View product details">
-                            <ChevronRight className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                      </div>
+                    <TableCell className="text-center text-xs text-muted-foreground">
+                      Expand to edit
                     </TableCell>
                   </TableRow>
                 );
+
+                if (!isExpanded) {
+                  return [summaryRow];
+                }
+
+                const variantRows = group.products.map((product) => {
+                  const isLowStock = product.quantity > 0 && product.quantity < 3;
+                  const isPending = pendingId === product.id;
+                  const detailHref = `/dashboard/products/item/${product.id}`;
+
+                  return (
+                    <TableRow
+                      key={product.id}
+                      className={`cursor-pointer ${!product.is_active ? "opacity-60" : ""}`}
+                      onClick={() => router.push(detailHref)}
+                    >
+                      <TableCell>
+                        <div className="pl-4 text-muted-foreground">↳</div>
+                      </TableCell>
+                      <TableCell className="font-medium">{product.brand}</TableCell>
+                      <TableCell>{product.model_type ?? "—"}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={detailHref}
+                          className="hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {product.model}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        {product.is_active ? (
+                          <Badge variant="secondary">Active</Badge>
+                        ) : (
+                          <Badge variant="outline">Inactive</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>{product.storage_ram ?? "—"}</TableCell>
+                      <TableCell>{product.color ?? "—"}</TableCell>
+                      <TableCell>{product.condition ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{product.sku}</TableCell>
+                      <TableCell className="text-right">
+                        {formatAUD(Number(product.cost_price))}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatAUD(Number(product.selling_price))}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="font-semibold">{product.quantity}</span>
+                          {isLowStock && (
+                            <Badge variant="destructive" className="px-1 text-[10px]">
+                              Low
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div
+                          className="flex items-center justify-center gap-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <EditProductDialog product={product} variant="icon" />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={isPending || product.quantity === 0}
+                            onClick={() => handleAdjust(product, -1)}
+                            aria-label="Decrease stock"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7"
+                            disabled={isPending}
+                            onClick={() => handleAdjust(product, 1)}
+                            aria-label="Increase stock"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+                            <Link href={detailHref} aria-label="View product details">
+                              <ChevronRight className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                });
+
+                return [summaryRow, ...variantRows];
               })
             )}
           </TableBody>

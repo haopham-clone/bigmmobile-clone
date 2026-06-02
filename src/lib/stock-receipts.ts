@@ -7,6 +7,7 @@ import type {
 } from "@/types/database";
 import { HIDDEN_CATEGORY_SLUGS } from "@/lib/categories";
 import { isMockMode } from "@/lib/config";
+import { deriveProductModelType } from "@/lib/model-type";
 import {
   mockListActiveProducts,
   mockListStockReceipts,
@@ -115,6 +116,8 @@ export async function submitStockReceipt(
         .insert({
           image_url: line.image_url ?? null,
           brand: line.brand,
+          model_type:
+            line.model_type || deriveProductModelType(line.brand, line.model, line.category),
           model: line.model,
           storage_ram: line.storage_ram ?? null,
           color: line.color ?? null,

@@ -6,12 +6,17 @@ export interface Product {
   id: string;
   image_url: string | null;
   brand: string;
+  model_type?: string | null;
   model: string;
   storage_ram: string | null;
   color: string | null;
   condition: string | null;
   category: CategorySlug | string;
   sku: string;
+  source_product_url?: string | null;
+  source_variation_id?: number | null;
+  source_sku?: string | null;
+  variant_attributes?: Record<string, string>;
   cost_price: number;
   selling_price: number;
   quantity: number;
@@ -33,12 +38,17 @@ export interface StockLog {
 export interface ProductInsert {
   image_url?: string | null;
   brand: string;
+  model_type?: string | null;
   model: string;
   storage_ram?: string | null;
   color?: string | null;
   condition?: string | null;
   category: CategorySlug | string;
   sku: string;
+  source_product_url?: string | null;
+  source_variation_id?: number | null;
+  source_sku?: string | null;
+  variant_attributes?: Record<string, string>;
   cost_price: number;
   selling_price: number;
   quantity: number;
@@ -104,6 +114,7 @@ export interface StockReceiptLineInput {
   quantity_received: number;
   // new product fields
   brand?: string;
+  model_type?: string | null;
   model?: string;
   sku?: string;
   category?: string;

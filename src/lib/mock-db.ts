@@ -11,6 +11,7 @@ import type {
   StockReceiptWithItems,
 } from "@/types/database";
 import { HIDDEN_CATEGORY_SLUGS, SIDEBAR_CATEGORIES } from "@/lib/categories";
+import { deriveProductModelType } from "@/lib/model-type";
 import { productMatchesTokenizedSearch } from "@/lib/search-utils";
 
 const MOCK_USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -229,7 +230,7 @@ function filterProductsForList(
   const q = (filters.search ?? "").trim();
   if (q) {
     list = list.filter((p) =>
-      productMatchesTokenizedSearch(p.brand, p.model, p.sku, q)
+      productMatchesTokenizedSearch(p.brand, p.model, p.sku, q, p.model_type ?? "")
     );
   }
   return list;
@@ -303,6 +304,7 @@ export function mockAddProduct(data: ProductInsert): { error?: string } {
     id: id(),
     image_url: data.image_url ?? null,
     brand: data.brand,
+    model_type: data.model_type || deriveProductModelType(data.brand, data.model, data.category),
     model: data.model,
     storage_ram: data.storage_ram ?? null,
     color: data.color ?? null,
@@ -354,6 +356,7 @@ export function mockUpdateProduct(
     ...current,
     image_url: data.image_url ?? null,
     brand: data.brand,
+    model_type: data.model_type || deriveProductModelType(data.brand, data.model, data.category),
     model: data.model,
     storage_ram: data.storage_ram ?? null,
     color: data.color ?? null,
@@ -459,6 +462,8 @@ export function mockSubmitStockReceipt(
         id: id(),
         image_url: line.image_url ?? null,
         brand: line.brand,
+        model_type:
+          line.model_type || deriveProductModelType(line.brand, line.model, line.category),
         model: line.model,
         storage_ram: line.storage_ram ?? null,
         color: line.color ?? null,

@@ -12,18 +12,24 @@ export function productMatchesTokenizedSearch(
   brand: string,
   model: string,
   sku: string,
-  rawSearch: string
+  rawSearch: string,
+  modelType = ""
 ): boolean {
   const tokens = tokenizeSearch(rawSearch);
   if (tokens.length === 0) return true;
 
   const b = brand.toLowerCase();
+  const t = modelType.toLowerCase();
   const m = model.toLowerCase();
   const s = sku.toLowerCase();
-  const combined = `${b} ${m}`;
+  const combined = `${b} ${t} ${m}`;
 
   return tokens.every(
     (token) =>
-      b.includes(token) || m.includes(token) || s.includes(token) || combined.includes(token)
+      b.includes(token) ||
+      t.includes(token) ||
+      m.includes(token) ||
+      s.includes(token) ||
+      combined.includes(token)
   );
 }

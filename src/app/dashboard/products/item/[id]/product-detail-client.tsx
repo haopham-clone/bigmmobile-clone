@@ -145,6 +145,7 @@ export function ProductDetailClient({ product: initialProduct }: ProductDetailCl
 
             <dl className="space-y-4">
               <DetailRow label="Brand" value={product.brand} />
+              <DetailRow label="Model type" value={product.model_type ?? "—"} />
               <DetailRow label="Model" value={product.model} />
               <DetailRow label="Storage / RAM" value={product.storage_ram ?? "—"} />
               <DetailRow label="Color" value={product.color ?? "—"} />

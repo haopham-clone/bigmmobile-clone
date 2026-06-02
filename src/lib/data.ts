@@ -1,4 +1,5 @@
 import { isMockMode } from "@/lib/config";
+import { deriveProductModelType } from "@/lib/model-type";
 import {
   HIDDEN_CATEGORY_SLUGS,
   SIDEBAR_CATEGORIES,
@@ -146,6 +147,7 @@ export async function insertProduct(
     .insert({
       image_url: data.image_url ?? null,
       brand: data.brand,
+      model_type: data.model_type || deriveProductModelType(data.brand, data.model, data.category),
       model: data.model,
       storage_ram: data.storage_ram ?? null,
       color: data.color ?? null,
@@ -261,6 +263,7 @@ export async function updateProduct(
     .update({
       image_url: data.image_url ?? null,
       brand: data.brand,
+      model_type: data.model_type || deriveProductModelType(data.brand, data.model, data.category),
       model: data.model,
       storage_ram: data.storage_ram ?? null,
       color: data.color ?? null,

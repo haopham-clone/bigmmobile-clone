@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
+import { deriveProductModelType } from "@/lib/model-type";
 import { insertProduct, setProductActive, updateProduct as updateProductRecord, updateStock } from "@/lib/data";
 
 const categoryValues = PRODUCT_CATEGORIES_SELECT.map((c) => c.slug) as [string, ...string[]];
@@ -14,6 +15,7 @@ const productSchema = z.object({
     .optional()
     .refine((v) => !v || v === "" || /^https?:\/\/.+/.test(v), "Invalid image URL"),
   brand: z.string().min(1, "Brand is required"),
+  model_type: z.string().optional(),
   model: z.string().min(1, "Model is required"),
   storage_ram: z.string().optional(),
   color: z.string().optional(),
@@ -37,6 +39,7 @@ export async function addProduct(formData: FormData) {
   const raw = {
     image_url: (formData.get("image_url") as string) || "",
     brand: formData.get("brand") as string,
+    model_type: (formData.get("model_type") as string) || "",
     model: formData.get("model") as string,
     storage_ram: (formData.get("storage_ram") as string) || "",
     color: (formData.get("color") as string) || "",
@@ -57,6 +60,7 @@ export async function addProduct(formData: FormData) {
   const result = await insertProduct({
     image_url: data.image_url || null,
     brand: data.brand,
+    model_type: data.model_type || deriveProductModelType(data.brand, data.model, data.category),
     model: data.model,
     storage_ram: data.storage_ram || null,
     color: data.color || null,
@@ -95,6 +99,7 @@ export async function editProduct(productId: string, formData: FormData) {
   const raw = {
     image_url: (formData.get("image_url") as string) || "",
     brand: formData.get("brand") as string,
+    model_type: (formData.get("model_type") as string) || "",
     model: formData.get("model") as string,
     storage_ram: (formData.get("storage_ram") as string) || "",
     color: (formData.get("color") as string) || "",
@@ -116,6 +121,7 @@ export async function editProduct(productId: string, formData: FormData) {
   const result = await updateProductRecord(productId, {
     image_url: data.image_url || null,
     brand: data.brand,
+    model_type: data.model_type || deriveProductModelType(data.brand, data.model, data.category),
     model: data.model,
     storage_ram: data.storage_ram || null,
     color: data.color || null,

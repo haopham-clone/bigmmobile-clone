@@ -38,6 +38,7 @@ const newLineSchema = z.object({
   mode: z.literal("new"),
   quantity_received: z.coerce.number().int().min(1),
   brand: z.string().min(1),
+  model_type: z.string().optional(),
   model: z.string().min(1),
   sku: z.string().min(1),
   category: z.enum(categoryValues),

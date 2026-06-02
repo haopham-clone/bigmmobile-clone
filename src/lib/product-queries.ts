@@ -1,7 +1,9 @@
 import { isMockMode } from "@/lib/config";
+import { deriveProductModelType, getModelTypeSortRank } from "@/lib/model-type";
 import { tokenizeSearch } from "@/lib/search-utils";
 import {
   mockGetProductBrands,
+  mockListProducts,
   mockListProductsPaginated,
   mockSearchActiveProducts,
 } from "@/lib/mock-db";
@@ -15,6 +17,20 @@ import type {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type QueryBuilder = any;
+
+export interface SidebarProductModel {
+  model: string;
+}
+
+export interface SidebarProductBrand {
+  brand: string;
+  models: SidebarProductModel[];
+}
+
+export interface SidebarProductCategory {
+  category: string;
+  brands: SidebarProductBrand[];
+}
 
 function normalizeProduct(row: Record<string, unknown>): Product {
   return {
@@ -35,7 +51,9 @@ function applySearchFilter(query: QueryBuilder, rawSearch: string): QueryBuilder
   let q = query;
   for (const token of tokens) {
     const pattern = `%${token}%`;
-    q = q.or(`brand.ilike.${pattern},model.ilike.${pattern},sku.ilike.${pattern}`);
+    q = q.or(
+      `brand.ilike.${pattern},model_type.ilike.${pattern},model.ilike.${pattern},sku.ilike.${pattern}`
+    );
   }
   return q;
 }
@@ -153,6 +171,96 @@ export async function fetchProductBrands(
 
   const brands = [...new Set((data ?? []).map((r) => r.brand as string).filter(Boolean))].sort();
   return { data: brands };
+}
+
+function buildSidebarTree(
+  rows: Array<{
+    category: string | null;
+    brand: string | null;
+    model: string | null;
+    model_type?: string | null;
+  }>
+): SidebarProductCategory[] {
+  const byCategory = new Map<string, Map<string, Set<string>>>();
+
+  for (const row of rows) {
+    if (!row.category || !row.brand || !row.model) continue;
+    const modelGroup =
+      row.model_type?.trim() || deriveProductModelType(row.brand, row.model, row.category);
+    if (!modelGroup) continue;
+
+    if (!byCategory.has(row.category)) byCategory.set(row.category, new Map());
+
+    const byBrand = byCategory.get(row.category)!;
+    const brandGroup =
+      row.category === "phone-cases" && modelGroup === "Other Phone Cases"
+        ? "Other Phone Cases"
+        : row.brand;
+    if (!byBrand.has(brandGroup)) byBrand.set(brandGroup, new Set());
+    byBrand.get(brandGroup)!.add(modelGroup);
+  }
+
+  return Array.from(byCategory.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([category, brandMap]) => ({
+      category,
+      brands: Array.from(brandMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([brand, models]) => ({
+          brand,
+          models: Array.from(models)
+            .sort((a, b) => {
+              const rankDiff = getModelTypeSortRank(b) - getModelTypeSortRank(a);
+              return rankDiff || a.localeCompare(b);
+            })
+            .map((model) => ({ model })),
+        })),
+    }));
+}
+
+export async function fetchSidebarProductTree(): Promise<{
+  data: SidebarProductCategory[];
+  error?: string;
+}> {
+  if (isMockMode()) {
+    const rows = mockListProducts("all")
+      .filter((p) => p.is_active)
+      .map((p) => ({
+        category: String(p.category),
+        brand: p.brand,
+        model: p.model,
+        model_type: p.model_type,
+      }));
+    return { data: buildSidebarTree(rows) };
+  }
+
+  const supabase = await createClient();
+  const pageSize = 1000;
+  const rows: Array<{
+    category: string | null;
+    brand: string | null;
+    model: string | null;
+    model_type: string | null;
+  }> = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("category, brand, model, model_type")
+      .eq("is_active", true)
+      .neq("category", "devices")
+      .order("category")
+      .order("brand")
+      .order("model")
+      .range(offset, offset + pageSize - 1);
+
+    if (error) return { data: [], error: error.message };
+
+    rows.push(...((data ?? []) as typeof rows));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return { data: buildSidebarTree(rows) };
 }
 
 export async function searchActiveProducts(

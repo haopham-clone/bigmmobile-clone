@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { resolveCategorySlug } from "../src/lib/categories";
+import { deriveProductModelType } from "../src/lib/model-type";
 
 interface CrawlerProduct {
   name: string;
@@ -18,9 +19,26 @@ interface CrawlerProduct {
   product_url: string;
   image_url: string | null;
   category: string | null;
+  color?: string | null;
+  source_sku?: string | null;
+  source_variation_id?: number | null;
+  variant_attributes?: Record<string, string>;
   source: string;
   crawled_at: string;
 }
+
+interface ExistingProductIdentity {
+  id: string;
+  sku: string;
+  quantity: number;
+  is_active: boolean;
+  source_product_url: string | null;
+  source_variation_id: number | null;
+}
+
+// CLI-only script: Supabase is intentionally untyped because this repo does not generate Database types.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SeedSupabaseClient = any;
 
 const BRANDS = [
   "Apple",
@@ -54,6 +72,9 @@ const COLORS = [
 ];
 
 const BATCH_SIZE = 500;
+// Supabase/PostgREST can reject very large `in (...)` lists with "URI too long".
+// Deactivation reconciliation can involve thousands of ids, so we keep this smaller.
+const DEACTIVATE_BATCH_SIZE = 200;
 
 function slugFromUrl(url: string): string {
   try {
@@ -107,6 +128,42 @@ function extractColor(name: string): string {
   return "Unknown";
 }
 
+function normalizeSourceSku(sourceSku: string | null | undefined): string | null {
+  const sku = sourceSku?.trim();
+  return sku || null;
+}
+
+function appendNonColorVariantLabels(model: string, row: CrawlerProduct): string {
+  const labels = Object.entries(row.variant_attributes ?? {})
+    .filter(([name, value]) => name !== "color" && value.trim().length > 0)
+    .map(([, value]) => value.trim());
+  if (labels.length === 0) return model;
+  return `${model} - ${labels.join(" / ")}`;
+}
+
+function crawlerRowKey(row: Pick<CrawlerProduct, "product_url" | "source_variation_id">): string {
+  if (row.source_variation_id != null) {
+    return `variation:${row.source_variation_id}`;
+  }
+  return `product:${row.product_url}`;
+}
+
+function existingRowKey(
+  row: Pick<ExistingProductIdentity, "source_product_url" | "source_variation_id">
+): string | null {
+  if (row.source_variation_id != null) {
+    return `variation:${row.source_variation_id}`;
+  }
+  if (row.source_product_url) {
+    return `product:${row.source_product_url}`;
+  }
+  return null;
+}
+
+function variationFallbackSku(row: CrawlerProduct): string {
+  return `${slugFromUrl(row.product_url)}--variation-${row.source_variation_id}`;
+}
+
 function extractCondition(name: string, category: string | null): string {
   const text = `${name} ${category ?? ""}`.toLowerCase();
   if (/grade\s*a\+\+/i.test(name)) return "Grade A++";
@@ -116,22 +173,158 @@ function extractCondition(name: string, category: string | null): string {
   return "Standard";
 }
 
-function mapProduct(row: CrawlerProduct) {
+function mapProduct(row: CrawlerProduct, sku: string) {
   const brand = extractBrand(row.name, row.category);
+  const model = appendNonColorVariantLabels(extractModel(row.name, brand), row);
   return {
     image_url: row.image_url || null,
     brand,
-    model: extractModel(row.name, brand),
+    model_type: deriveProductModelType(brand, model, resolveCategorySlug(row.category, row.name)),
+    model,
     storage_ram: extractStorageRam(row.name),
-    color: extractColor(row.name),
+    color: row.color?.trim() || extractColor(row.name),
     condition: extractCondition(row.name, row.category),
     category: resolveCategorySlug(row.category, row.name),
-    sku: slugFromUrl(row.product_url),
+    sku,
+    source_product_url: row.product_url,
+    source_variation_id: row.source_variation_id ?? null,
+    source_sku: normalizeSourceSku(row.source_sku),
+    variant_attributes: row.variant_attributes ?? {},
     cost_price: 0,
     selling_price: parsePrice(row.price),
     quantity: 0,
     is_active: true,
   };
+}
+
+async function fetchAllProductIdentities(
+  supabase: SeedSupabaseClient
+): Promise<ExistingProductIdentity[]> {
+  const pageSize = 1000;
+  const products: ExistingProductIdentity[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, sku, quantity, is_active, source_product_url, source_variation_id")
+      .range(from, from + pageSize - 1);
+
+    if (error) throw new Error(`Failed to read existing product identities: ${error.message}`);
+    products.push(...((data ?? []) as ExistingProductIdentity[]));
+    if ((data ?? []).length < pageSize) break;
+  }
+
+  return products;
+}
+
+function chooseInventorySkus(
+  crawlerProducts: CrawlerProduct[],
+  existingProducts: ExistingProductIdentity[]
+): Map<string, string> {
+  const dbBySku = new Map(existingProducts.map((row) => [row.sku, row]));
+  const existingByVariationId = new Map(
+    existingProducts
+      .filter((row) => row.source_variation_id != null)
+      .map((row) => [row.source_variation_id as number, row])
+  );
+  const claimedSkus = new Set<string>();
+  const skuByCrawlerKey = new Map<string, string>();
+
+  for (const row of crawlerProducts) {
+    const rowKey = crawlerRowKey(row);
+    if (skuByCrawlerKey.has(rowKey)) continue;
+
+    let sku = slugFromUrl(row.product_url);
+    if (row.source_variation_id != null) {
+      const existingVariation = existingByVariationId.get(row.source_variation_id);
+      if (existingVariation) {
+        sku = existingVariation.sku;
+      } else {
+        const preferredSku = normalizeSourceSku(row.source_sku);
+        const fallbackSku = variationFallbackSku(row);
+        sku =
+          preferredSku && !dbBySku.has(preferredSku) && !claimedSkus.has(preferredSku)
+            ? preferredSku
+            : fallbackSku;
+
+        const conflictingRow = dbBySku.get(sku);
+        if (
+          claimedSkus.has(sku) ||
+          (conflictingRow && conflictingRow.source_variation_id !== row.source_variation_id)
+        ) {
+          throw new Error(`Cannot assign stable variation SKU without collision: ${sku}`);
+        }
+      }
+    }
+
+    claimedSkus.add(sku);
+    skuByCrawlerKey.set(rowKey, sku);
+  }
+
+  return skuByCrawlerKey;
+}
+
+async function deactivateProducts(
+  supabase: SeedSupabaseClient,
+  ids: string[]
+): Promise<void> {
+  for (let i = 0; i < ids.length; i += DEACTIVATE_BATCH_SIZE) {
+    const { error } = await supabase
+      .from("products")
+      .update({ is_active: false })
+      .in("id", ids.slice(i, i + DEACTIVATE_BATCH_SIZE));
+    if (error) throw new Error(`Failed to deactivate stale crawler rows: ${error.message}`);
+  }
+}
+
+async function reconcileLegacyAndStaleCrawlerRows(
+  supabase: SeedSupabaseClient,
+  crawlerProducts: CrawlerProduct[],
+  activeCrawlerKeys: Set<string>,
+  activeSkus: Set<string>
+): Promise<void> {
+  const existingProducts = await fetchAllProductIdentities(supabase);
+  const bySku = new Map(existingProducts.map((row) => [row.sku, row]));
+  const legacyParentIds: string[] = [];
+  const variationParentUrls = new Set(
+    crawlerProducts
+      .filter((row) => row.source_variation_id != null)
+      .map((row) => row.product_url)
+  );
+
+  for (const productUrl of variationParentUrls) {
+    const parentSku = slugFromUrl(productUrl);
+    const parent = bySku.get(parentSku);
+    if (!parent || activeSkus.has(parentSku)) continue;
+    if (parent.quantity > 0) {
+      console.warn(
+        `Keeping stocked legacy parent active for manual split: ${parent.sku} (${parent.quantity})`
+      );
+      continue;
+    }
+    legacyParentIds.push(parent.id);
+  }
+
+  await deactivateProducts(supabase, legacyParentIds);
+
+  const refreshedProducts = await fetchAllProductIdentities(supabase);
+  const staleIds: string[] = [];
+  for (const product of refreshedProducts) {
+    const rowKey = existingRowKey(product);
+    if (!rowKey || activeCrawlerKeys.has(rowKey)) continue;
+    if (product.quantity > 0) {
+      console.warn(
+        `Keeping stocked stale crawler row active for manual review: ${product.sku} (${product.quantity})`
+      );
+      continue;
+    }
+    staleIds.push(product.id);
+  }
+
+  await deactivateProducts(supabase, staleIds);
+  console.log(
+    `Reconciled crawler rows: deactivated ${legacyParentIds.length} legacy parents and ${staleIds.length} stale rows.`
+  );
 }
 
 function resolveCrawlerJsonPath(): string {
@@ -172,7 +365,11 @@ async function main() {
     auth: { persistSession: false },
   });
 
-  const mapped = crawlerProducts.map(mapProduct);
+  const existingProducts = await fetchAllProductIdentities(supabase);
+  const skuByCrawlerKey = chooseInventorySkus(crawlerProducts, existingProducts);
+  const mapped = crawlerProducts.map((row) =>
+    mapProduct(row, skuByCrawlerKey.get(crawlerRowKey(row))!)
+  );
 
   // Deduplicate by SKU (keep first occurrence)
   const bySku = new Map<string, (typeof mapped)[0]>();
@@ -215,6 +412,13 @@ async function main() {
     upserted += batch.length;
     console.log(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: upserted ${batch.length} rows`);
   }
+
+  await reconcileLegacyAndStaleCrawlerRows(
+    supabase,
+    crawlerProducts,
+    new Set(crawlerProducts.map(crawlerRowKey)),
+    new Set(unique.map((product) => product.sku))
+  );
 
   console.log(`Done. Upserted ${upserted} products (categories backfilled, quantities preserved).`);
 }

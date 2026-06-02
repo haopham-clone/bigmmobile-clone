@@ -106,8 +106,12 @@ export function resolveCategorySlug(
     return "repair-products";
   }
 
-  // Tablet cases before generic case rule
-  if (/tablet cases?|ipad cases?/.test(c)) {
+  // Tablet cases before generic phone case rule. BigM sometimes nests iPad cases
+  // under a broad "Phone Cases" source category, so inspect the product name too.
+  if (
+    /tablet cases?|ipad cases?/.test(c) ||
+    (/\b(ipad|tablet)\b/.test(combined) && /\b(case|cover|folio|keyboard)\b/.test(combined))
+  ) {
     return "tablet-cases";
   }
 

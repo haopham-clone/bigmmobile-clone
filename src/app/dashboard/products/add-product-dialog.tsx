@@ -41,6 +41,7 @@ const categoryValues = PRODUCT_CATEGORIES_SELECT.map((c) => c.slug) as [string, 
 const formSchema = z.object({
   image_url: z.string().url("Invalid URL").optional().or(z.literal("")),
   brand: z.string().min(1, "Brand is required"),
+  model_type: z.string().optional(),
   model: z.string().min(1, "Model is required"),
   storage_ram: z.string().optional(),
   color: z.string().optional(),
@@ -68,6 +69,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
     defaultValues: {
       image_url: "",
       brand: "",
+      model_type: "",
       model: "",
       storage_ram: "",
       color: "",
@@ -108,6 +110,7 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
           form.reset({
             image_url: "",
             brand: "",
+            model_type: "",
             model: "",
             storage_ram: "",
             color: "",
@@ -201,6 +204,19 @@ export function AddProductDialog({ defaultCategory = "other" }: AddProductDialog
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="model_type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Model type</FormLabel>
+                  <FormControl>
+                    <Input placeholder="iPhone 17" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <div className="grid grid-cols-2 gap-3">
               <FormField
                 control={form.control}

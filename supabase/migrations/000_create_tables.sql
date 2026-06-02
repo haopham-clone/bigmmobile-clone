@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS public.products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   image_url TEXT,
   brand TEXT NOT NULL,
+  model_type TEXT,
   model TEXT NOT NULL,
   storage_ram TEXT,
   color TEXT,

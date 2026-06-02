@@ -62,6 +62,44 @@ interface ProductGroup {
 
 const SEARCH_DEBOUNCE_MS = 2000;
 
+function ProductThumbnail({
+  product,
+  href,
+  indent = false,
+}: {
+  product: Product;
+  href?: string;
+  indent?: boolean;
+}) {
+  const image = product.image_url ? (
+    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted">
+      <Image
+        src={product.image_url}
+        alt={product.model}
+        fill
+        className="object-contain p-1"
+        unoptimized
+      />
+    </div>
+  ) : (
+    <div className="h-16 w-16 shrink-0 rounded-md border bg-muted" />
+  );
+
+  const content = (
+    <div className={`flex items-center gap-2 ${indent ? "pl-2" : ""}`}>
+      {image}
+    </div>
+  );
+
+  if (!href) return content;
+
+  return (
+    <Link href={href} className="block" onClick={(e) => e.stopPropagation()}>
+      {content}
+    </Link>
+  );
+}
+
 function buildQueryString(
   base: ProductListUiFilters & { page: number }
 ): string {
@@ -319,7 +357,7 @@ export function ProductClient({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-20">Image</TableHead>
+              <TableHead className="w-28">Image</TableHead>
               <TableHead>Brand</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Model</TableHead>
@@ -353,23 +391,23 @@ export function ProductClient({
                 const summaryRow = (
                   <TableRow key={`group-${group.key}`} className="bg-muted/30">
                     <TableCell>
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-center"
-                        onClick={() => toggleGroup(group.key)}
-                        aria-label={isExpanded ? "Collapse variants" : "Expand variants"}
-                        disabled={!hasVariants}
-                      >
+                      <div className="flex items-center gap-2">
+                        <ProductThumbnail product={first} href={summaryDetailHref} />
                         {hasVariants ? (
-                          isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )
-                        ) : (
-                          <ChevronRight className="h-4 w-4 opacity-30" />
-                        )}
-                      </button>
+                          <button
+                            type="button"
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-background hover:bg-muted"
+                            onClick={() => toggleGroup(group.key)}
+                            aria-label={isExpanded ? "Collapse variants" : "Expand variants"}
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="font-semibold">{first.brand}</TableCell>
                     <TableCell>{first.model_type ?? "—"}</TableCell>
@@ -423,7 +461,7 @@ export function ProductClient({
                       onClick={() => router.push(detailHref)}
                     >
                       <TableCell>
-                        <div className="pl-4 text-muted-foreground">↳</div>
+                        <ProductThumbnail product={product} href={detailHref} indent />
                       </TableCell>
                       <TableCell className="font-medium">{product.brand}</TableCell>
                       <TableCell>{product.model_type ?? "—"}</TableCell>

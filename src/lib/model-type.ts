@@ -7,9 +7,56 @@ function matchFirst(text: string, patterns: RegExp[]): string | null {
 }
 
 function normalizeIphoneVariant(value: string): string {
-  const compact = value.replace(/\s+/g, "").toUpperCase();
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const compact = normalized.replace(/\s+/g, "").toUpperCase();
   if (compact === "XSMAX") return "XS MAX";
-  return value.replace(/\s+/g, " ").toUpperCase();
+  return normalized
+    .replace(/\bpro\s*max\b/gi, "PRO MAX")
+    .replace(/\bpro\b/gi, "PRO")
+    .replace(/\bplus\b/gi, "PLUS")
+    .replace(/\bmini\b/gi, "MINI")
+    .replace(/\bair\b/gi, "AIR")
+    .replace(/\bmax\b/gi, "MAX")
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+/** Longest suffix first so "17 Pro Max" is not truncated to "17 Pro" or "17". */
+function extractIphoneModelType(text: string): string | null {
+  const patterns: RegExp[] = [
+    /\biPhone\s*(X\/XS)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(XS\s*Max)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(XS)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(XR)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(X)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(SE)(?=\s|\/|-|$|\d)/i,
+    /\biPhone\s*(\d{1,2}\s*Pro\s*Max)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}\s*Pro)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}\s*Plus)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}\s*Mini)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}\s*Air)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}\s*Max)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}E)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2})(?=\s|\/|-|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return `iPhone ${normalizeIphoneVariant(match[1])}`;
+  }
+  return null;
+}
+
+function iphoneVariantSortBoost(variant: string): number {
+  const compact = variant.replace(/\s+/g, "").toUpperCase();
+  if (compact.includes("PROMAX")) return 0.9;
+  if (compact.includes("PRO")) return 0.7;
+  if (compact.includes("PLUS")) return 0.6;
+  if (compact.includes("AIR")) return 0.55;
+  if (compact.includes("MINI")) return 0.45;
+  if (compact.endsWith("MAX") || compact.includes("MAX")) return 0.4;
+  if (compact.endsWith("E")) return 0.35;
+  return 0;
 }
 
 export function getModelTypeSortRank(modelType: string): number {
@@ -17,21 +64,21 @@ export function getModelTypeSortRank(modelType: string): number {
   const iphoneMatch = normalized.match(/^IPHONE\s+(.+)$/);
 
   if (iphoneMatch?.[1]) {
-    const variant = iphoneMatch[1].replace(/\s+/g, "");
+    const variant = iphoneMatch[1].replace(/\s+/g, " ");
     const numeric = variant.match(/^(\d{1,2})/);
     if (numeric) {
       const version = Number(numeric[1]);
-      const suffixBoost =
-        variant.includes("E") || variant.includes("PRO") || variant.includes("MAX") ? 0.5 : 0;
-      return 10_000 + version + suffixBoost;
+      const suffix = variant.slice(numeric[1].length);
+      return 10_000 + version + iphoneVariantSortBoost(suffix);
     }
 
-    if (variant === "XSMAX") return 10_010.3;
-    if (variant === "XS") return 10_010.2;
-    if (variant === "X/XS") return 10_010.15;
-    if (variant === "XR") return 10_010.1;
-    if (variant === "X") return 10_010;
-    if (variant === "SE") return 10_000;
+    const compact = variant.replace(/\s+/g, "");
+    if (compact === "XSMAX") return 10_010.3;
+    if (compact === "XS") return 10_010.2;
+    if (compact === "X/XS") return 10_010.15;
+    if (compact === "XR") return 10_010.1;
+    if (compact === "X") return 10_010;
+    if (compact === "SE") return 10_000;
   }
 
   const pixelMatch = normalized.match(/^PIXEL\s+(\d{1,2})([A-Z])?/);
@@ -64,12 +111,8 @@ export function deriveProductModelType(
   }
 
   if (normalizedBrand === "apple") {
-    const iphoneMatch = text.match(
-      /\biPhone\s*(X\/XS|XS\s*Max|XS|XR|X|SE|\d{1,2}E?)(?=\s|\/|-|$|[A-Z])/i
-    );
-    if (iphoneMatch?.[1]) {
-      return `iPhone ${normalizeIphoneVariant(iphoneMatch[1])}`;
-    }
+    const iphoneModelType = extractIphoneModelType(text);
+    if (iphoneModelType) return iphoneModelType;
 
     const ipadModel = matchFirst(text, [
       /\biPad\s*(?:Air|Pro|Mini)?\s*(?:\d{1,2}(?:\.\d)?|[A-Z]\d{1,2})?\b/i,

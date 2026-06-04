@@ -51,6 +51,67 @@ export function canonicalizeModelType(modelType: string): string {
   return trimmed;
 }
 
+/** Same label the sidebar uses: derive from model, else stored model_type. */
+export function effectiveProductModelType(
+  brand: string,
+  model: string,
+  category?: string | null,
+  storedModelType?: string | null
+): string {
+  return canonicalizeModelType(
+    deriveProductModelType(brand, model, category) || storedModelType || ""
+  );
+}
+
+/** Sidebar ?type= tab — must match derivation, not only the model_type column. */
+export function productMatchesModelTypeFilter(
+  filterType: string,
+  brand: string,
+  model: string,
+  storedModelType?: string | null,
+  category?: string | null
+): boolean {
+  const canonical = canonicalizeModelType(filterType);
+  if (!canonical) return true;
+
+  const effective = effectiveProductModelType(brand, model, category, storedModelType);
+  if (effective === canonical) return true;
+
+  const stored = canonicalizeModelType(storedModelType ?? "");
+  if (!stored) return false;
+
+  return new Set(iphoneModelTypeAliases(canonical)).has(stored);
+}
+
+function quotePostgrestFilterValue(value: string): string {
+  if (/[,.()"\s%]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/** PostgREST .or() clause: model_type spellings + model title fallback. */
+export function buildModelTypePostgrestOrFilter(modelType: string): string | null {
+  const canonical = canonicalizeModelType(modelType);
+  if (!canonical) return null;
+
+  const parts = new Set<string>();
+  for (const alias of iphoneModelTypeAliases(canonical)) {
+    parts.add(`model_type.ilike.${quotePostgrestFilterValue(alias)}`);
+  }
+
+  const iphone = canonical.match(/^iPhone\s+(.+)$/i);
+  if (iphone) {
+    const tokens = iphone[1].split(/\s+/).filter(Boolean);
+    parts.add(
+      `model.ilike.${quotePostgrestFilterValue(`%iPhone%${tokens.join("%")}%`)}`
+    );
+  } else {
+    parts.add(`model_type.ilike.${quotePostgrestFilterValue(canonical)}`);
+    parts.add(`model.ilike.${quotePostgrestFilterValue(`%${canonical}%`)}`);
+  }
+
+  return [...parts].join(",");
+}
+
 /** DB rows may still use glued labels until migration/seed; match all aliases. */
 export function iphoneModelTypeAliases(canonical: string): string[] {
   const normalized = canonicalizeModelType(canonical);

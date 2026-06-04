@@ -11,8 +11,12 @@ import type {
   StockReceiptWithItems,
 } from "@/types/database";
 import { HIDDEN_CATEGORY_SLUGS, SIDEBAR_CATEGORIES } from "@/lib/categories";
-import { deriveProductModelType } from "@/lib/model-type";
-import { canonicalizeModelType } from "@/lib/model-type";
+import {
+  canonicalizeModelType,
+  deriveProductModelType,
+  effectiveProductModelType,
+  productMatchesModelTypeFilter,
+} from "@/lib/model-type";
 import { productMatchesTokenizedSearch } from "@/lib/search-utils";
 
 const MOCK_USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -232,12 +236,30 @@ function filterProductsForList(
   const modelType = canonicalizeModelType((filters.modelType ?? "").trim());
   const modelTypePrefix = (filters.modelTypePrefix ?? "").trim();
   if (modelType) {
-    list = list.filter(
-      (p) => canonicalizeModelType(p.model_type ?? "") === modelType
+    list = list.filter((p) =>
+      productMatchesModelTypeFilter(
+        modelType,
+        p.brand,
+        p.model,
+        p.model_type,
+        String(p.category)
+      )
     );
   } else if (modelTypePrefix) {
     const prefix = modelTypePrefix.toLowerCase();
-    list = list.filter((p) => (p.model_type ?? "").toLowerCase().startsWith(prefix));
+    list = list.filter((p) => {
+      const effective = effectiveProductModelType(
+        p.brand,
+        p.model,
+        String(p.category),
+        p.model_type
+      ).toLowerCase();
+      return (
+        effective.startsWith(prefix) ||
+        (p.model_type ?? "").toLowerCase().startsWith(prefix) ||
+        p.model.toLowerCase().includes(prefix)
+      );
+    });
   }
 
   const q = (filters.search ?? "").trim();

@@ -1,9 +1,9 @@
 import { isMockMode } from "@/lib/config";
 import {
+  buildModelTypePostgrestOrFilter,
   canonicalizeModelType,
   deriveProductModelType,
   getModelTypeSortRank,
-  iphoneModelTypeAliases,
 } from "@/lib/model-type";
 import {
   isDeviceTypeSearch,
@@ -106,10 +106,12 @@ function applyListFilters(query: QueryBuilder, filters: ProductListFilters): Que
   const modelType = canonicalizeModelType(sanitizeSearchTerm(filters.modelType ?? ""));
   const modelTypePrefix = sanitizeSearchTerm(filters.modelTypePrefix ?? "");
   if (modelType.length > 0) {
-    const aliases = iphoneModelTypeAliases(modelType);
-    q = aliases.length === 1 ? q.eq("model_type", aliases[0]) : q.in("model_type", aliases);
+    const orFilter = buildModelTypePostgrestOrFilter(modelType);
+    if (orFilter) q = q.or(orFilter);
   } else if (modelTypePrefix.length > 0) {
-    q = q.ilike("model_type", `${modelTypePrefix}%`);
+    const prefix = modelTypePrefix.replace(/"/g, '""');
+    const quoted = /[,.()"\s%]/.test(prefix) ? `"${prefix}"` : prefix;
+    q = q.or(`model_type.ilike.${quoted}%,model.ilike.${quoted}%`);
   }
 
   const search = sanitizeSearchTerm(filters.search ?? "");

@@ -88,7 +88,52 @@ function quotePostgrestFilterValue(value: string): string {
   return value;
 }
 
-/** PostgREST .or() clause: model_type spellings + model title fallback. */
+/**
+ * Case-insensitive regex for product titles when model_type is missing.
+ * Avoids `%iPhone%17%PRO%`-style ilike that also matches Pro Max, Air + "Pro" in case names, etc.
+ */
+export function buildIphoneModelTitleImatchPattern(canonical: string): string | null {
+  const normalized = canonicalizeModelType(canonical);
+  const iphone = normalized.match(/^iPhone\s+(.+)$/i);
+  if (!iphone) return null;
+
+  const variant = iphone[1].trim();
+  const num = variant.match(/^(\d{1,2})/)?.[1];
+  if (!num) return null;
+
+  const suffix = variant.slice(num.length).trim().replace(/\s+/g, " ");
+  const compact = suffix.replace(/\s+/g, "").toUpperCase();
+
+  if (compact.includes("PROMAX") || /\bPRO\s*MAX\b/i.test(suffix)) {
+    return `.*iPhone\\s*${num}\\s*Pro\\s*Max.*`;
+  }
+  if (/\bPRO\b/i.test(suffix)) {
+    return `.*iPhone\\s*${num}\\s*Pro(?!\\s*Max).*`;
+  }
+  if (/\bAIR\b/i.test(suffix)) {
+    return `.*iPhone\\s*${num}\\s*Air\\b.*`;
+  }
+  if (/\bPLUS\b/i.test(suffix)) {
+    return `.*iPhone\\s*${num}\\s*Plus\\b.*`;
+  }
+  if (/\bMINI\b/i.test(suffix)) {
+    return `.*iPhone\\s*${num}\\s*Mini\\b.*`;
+  }
+  if (/\bMAX\b/i.test(suffix) && !/\bPRO\b/i.test(suffix)) {
+    return `.*iPhone\\s*${num}\\s*Max\\b.*`;
+  }
+  if (suffix) {
+    const suffixPattern = suffix
+      .split(/\s+/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("\\s*");
+    return `.*iPhone\\s*${num}\\s*${suffixPattern}.*`;
+  }
+
+  return `.*iPhone\\s*${num}(?!\\s*(?:Pro|Plus|Mini|Air|Max)\\b).*`;
+}
+
+/** PostgREST .or() clause: model_type spellings + precise model title regex fallback. */
 export function buildModelTypePostgrestOrFilter(modelType: string): string | null {
   const canonical = canonicalizeModelType(modelType);
   if (!canonical) return null;
@@ -98,15 +143,12 @@ export function buildModelTypePostgrestOrFilter(modelType: string): string | nul
     parts.add(`model_type.ilike.${quotePostgrestFilterValue(alias)}`);
   }
 
-  const iphone = canonical.match(/^iPhone\s+(.+)$/i);
-  if (iphone) {
-    const tokens = iphone[1].split(/\s+/).filter(Boolean);
-    parts.add(
-      `model.ilike.${quotePostgrestFilterValue(`%iPhone%${tokens.join("%")}%`)}`
-    );
+  const iphonePattern = buildIphoneModelTitleImatchPattern(canonical);
+  if (iphonePattern) {
+    parts.add(`model.imatch.${quotePostgrestFilterValue(iphonePattern)}`);
   } else {
     parts.add(`model_type.ilike.${quotePostgrestFilterValue(canonical)}`);
-    parts.add(`model.ilike.${quotePostgrestFilterValue(`%${canonical}%`)}`);
+    parts.add(`model.ilike.${quotePostgrestFilterValue(canonical)}`);
   }
 
   return [...parts].join(",");

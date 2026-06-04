@@ -66,6 +66,10 @@ export interface ProductListFilters {
   page?: number;
   pageSize?: number;
   search?: string;
+  /** Exact sidebar tab filter (model_type column). */
+  modelType?: string;
+  /** Prefix sidebar tab filter for series groups (e.g. Galaxy S). */
+  modelTypePrefix?: string;
   brand?: string;
   sort?: ProductSortOption;
   lowStockOnly?: boolean;

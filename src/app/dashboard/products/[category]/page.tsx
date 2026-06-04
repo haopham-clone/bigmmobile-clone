@@ -48,6 +48,8 @@ export default async function CategoryProductsPage({
     page: Math.max(1, Number(spString(sp.page, "1")) || 1),
     pageSize: 50,
     search: spString(sp.q),
+    modelType: spString(sp.type),
+    modelTypePrefix: spString(sp.typePrefix),
     brand: spString(sp.brand, "all"),
     sort,
     lowStockOnly: spBool(sp.lowStock, false),
@@ -84,6 +86,8 @@ export default async function CategoryProductsPage({
       defaultCategory={defaultCategory}
       initialFilters={{
         search: filters.search,
+        modelType: filters.modelType,
+        modelTypePrefix: filters.modelTypePrefix,
         brand: filters.brand,
         sort: filters.sort,
         lowStockOnly: filters.lowStockOnly,

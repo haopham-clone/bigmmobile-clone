@@ -227,8 +227,18 @@ function filterProductsForList(
   if (filters.brand && filters.brand !== "all") {
     list = list.filter((p) => p.brand === filters.brand);
   }
+
+  const modelType = (filters.modelType ?? "").trim();
+  const modelTypePrefix = (filters.modelTypePrefix ?? "").trim();
+  if (modelType) {
+    list = list.filter((p) => (p.model_type ?? "") === modelType);
+  } else if (modelTypePrefix) {
+    const prefix = modelTypePrefix.toLowerCase();
+    list = list.filter((p) => (p.model_type ?? "").toLowerCase().startsWith(prefix));
+  }
+
   const q = (filters.search ?? "").trim();
-  if (q) {
+  if (q && !modelType && !modelTypePrefix) {
     list = list.filter((p) =>
       productMatchesTokenizedSearch(p.brand, p.model, p.sku, q, p.model_type ?? "")
     );

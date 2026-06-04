@@ -5,7 +5,15 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, Search } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Minus,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import type { Product, ProductSortOption } from "@/types/database";
 import { formatAUD } from "@/lib/utils";
 import { adjustStock } from "./actions";
@@ -34,6 +42,8 @@ import {
 
 export interface ProductListUiFilters {
   search: string;
+  modelType: string;
+  modelTypePrefix: string;
   brand: string;
   sort: ProductSortOption;
   lowStockOnly: boolean;
@@ -106,6 +116,8 @@ function buildQueryString(
   const params = new URLSearchParams();
   if (base.page > 1) params.set("page", String(base.page));
   if (base.search.trim()) params.set("q", base.search.trim());
+  if (base.modelType.trim()) params.set("type", base.modelType.trim());
+  if (base.modelTypePrefix.trim()) params.set("typePrefix", base.modelTypePrefix.trim());
   if (base.brand && base.brand !== "all") params.set("brand", base.brand);
   if (base.sort !== "updated_desc") params.set("sort", base.sort);
   if (base.lowStockOnly) params.set("lowStock", "1");
@@ -155,8 +167,15 @@ export function ProductClient({
 
   const pushFilters = useCallback(
     (overrides: Partial<ProductListUiFilters & { page: number }>) => {
+      const searchChanged = overrides.search !== undefined;
       const next = {
         search: overrides.search ?? searchInput,
+        modelType: searchChanged
+          ? ""
+          : (overrides.modelType ?? initialFilters.modelType),
+        modelTypePrefix: searchChanged
+          ? ""
+          : (overrides.modelTypePrefix ?? initialFilters.modelTypePrefix),
         brand: overrides.brand ?? brandFilter,
         sort: overrides.sort ?? sortBy,
         lowStockOnly: overrides.lowStockOnly ?? lowStockOnly,
@@ -170,6 +189,8 @@ export function ProductClient({
       router,
       pathname,
       searchInput,
+      initialFilters.modelType,
+      initialFilters.modelTypePrefix,
       brandFilter,
       sortBy,
       lowStockOnly,
@@ -181,11 +202,17 @@ export function ProductClient({
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchInput !== initialFilters.search) {
-        pushFilters({ search: searchInput, page: 1 });
+        pushFilters({ search: searchInput, modelType: "", modelTypePrefix: "", page: 1 });
       }
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput, initialFilters.search, pushFilters]);
+
+  const activeTypeLabel =
+    initialFilters.modelType ||
+    (initialFilters.modelTypePrefix
+      ? `${initialFilters.modelTypePrefix} series`
+      : "");
 
   function handleAdjust(product: Product, delta: number) {
     const prevQty = product.quantity;
@@ -257,6 +284,23 @@ export function ProductClient({
               </span>
             )}
           </p>
+          {activeTypeLabel ? (
+            <div className="mt-2 flex items-center gap-2">
+              <Badge variant="secondary" className="gap-1 pr-1 font-normal">
+                Type: {activeTypeLabel}
+                <button
+                  type="button"
+                  className="rounded-sm p-0.5 hover:bg-muted"
+                  aria-label="Clear type filter"
+                  onClick={() =>
+                    pushFilters({ modelType: "", modelTypePrefix: "", page: 1 })
+                  }
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            </div>
+          ) : null}
         </div>
         <AddProductDialog defaultCategory={defaultCategory} />
       </div>
@@ -266,7 +310,7 @@ export function ProductClient({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search by brand, type (e.g. iPhone 17 PRO MAX), SKU..."
+              placeholder="Search by brand, model, SKU..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="pl-9"

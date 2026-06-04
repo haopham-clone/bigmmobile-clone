@@ -98,8 +98,16 @@ function applyListFilters(query: QueryBuilder, filters: ProductListFilters): Que
     q = q.eq("brand", filters.brand);
   }
 
+  const modelType = sanitizeSearchTerm(filters.modelType ?? "");
+  const modelTypePrefix = sanitizeSearchTerm(filters.modelTypePrefix ?? "");
+  if (modelType.length > 0) {
+    q = q.eq("model_type", modelType);
+  } else if (modelTypePrefix.length > 0) {
+    q = q.ilike("model_type", `${modelTypePrefix}%`);
+  }
+
   const search = sanitizeSearchTerm(filters.search ?? "");
-  if (search.length > 0) {
+  if (search.length > 0 && modelType.length === 0 && modelTypePrefix.length === 0) {
     q = applySearchFilter(q, search);
   }
 

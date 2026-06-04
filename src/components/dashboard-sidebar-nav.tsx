@@ -20,10 +20,19 @@ interface DashboardSidebarNavProps {
   productTree: SidebarProductCategory[];
 }
 
-function buildFilterHref(category: string, brand?: string, model?: string): string {
+interface FilterHrefOptions {
+  brand?: string;
+  /** Exact model_type tab (sidebar). */
+  type?: string;
+  /** Series group tab (e.g. Galaxy S). */
+  typePrefix?: string;
+}
+
+function buildFilterHref(category: string, options: FilterHrefOptions = {}): string {
   const params = new URLSearchParams();
-  if (brand) params.set("brand", brand);
-  if (model) params.set("q", model);
+  if (options.brand) params.set("brand", options.brand);
+  if (options.type) params.set("type", options.type);
+  if (options.typePrefix) params.set("typePrefix", options.typePrefix);
 
   const query = params.toString();
   return `/dashboard/products/${category}${query ? `?${query}` : ""}`;
@@ -98,7 +107,9 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
   const isStockInActive = pathname === "/dashboard/stock-in";
   const isStockInHistoryActive = pathname.startsWith("/dashboard/stock-in/history");
   const activeBrand = searchParams.get("brand") ?? "";
-  const activeSearch = searchParams.get("q") ?? "";
+  const activeType = searchParams.get("type") ?? "";
+  const activeTypePrefix = searchParams.get("typePrefix") ?? "";
+  const hasTypeFilter = Boolean(activeType || activeTypePrefix);
 
   return (
     <>
@@ -173,10 +184,10 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
                       const isOtherPhoneCases =
                         slug === "phone-cases" && brand === "Other Phone Cases";
                       const brandHref = isOtherPhoneCases
-                        ? buildFilterHref(slug, undefined, "Other Phone Cases")
-                        : buildFilterHref(slug, brand);
+                        ? buildFilterHref(slug, { type: "Other Phone Cases" })
+                        : buildFilterHref(slug, { brand });
                       const isBrandActive = isOtherPhoneCases
-                        ? isActive && activeSearch === "Other Phone Cases"
+                        ? isActive && activeType === "Other Phone Cases"
                         : isActive && activeBrand === brand;
                       const brandLabel = brandMenuLabel(slug, brand, models);
                       const hideOnlyModel =
@@ -198,7 +209,7 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
                             className={cn(
                               "flex cursor-pointer list-none items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                               isBrandActive &&
-                                !activeSearch &&
+                                !hasTypeFilter &&
                                 "bg-sidebar-accent text-sidebar-accent-foreground"
                             )}
                           >
@@ -215,10 +226,15 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
                           {hasBrandChildren && (
                           <div className="ml-4 flex flex-col gap-0.5">
                             {groups.map(({ label, query, models: groupModels }) => {
-                              const seriesHref = buildFilterHref(slug, brand, query);
+                              const seriesHref = buildFilterHref(slug, {
+                                brand,
+                                typePrefix: query,
+                              });
                               const isSeriesActive =
-                                isBrandActive &&
-                                (activeSearch === query || activeSearch.startsWith(`${query} `));
+                                isActive &&
+                                activeBrand === brand &&
+                                (activeTypePrefix === query ||
+                                  groupModels.some(({ model }) => activeType === model));
 
                               return (
                                 <details
@@ -230,7 +246,8 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
                                     className={cn(
                                       "flex cursor-pointer list-none items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                                       isSeriesActive &&
-                                        activeSearch === query &&
+                                        activeTypePrefix === query &&
+                                        !activeType &&
                                         "bg-sidebar-accent text-sidebar-accent-foreground"
                                     )}
                                   >
@@ -242,9 +259,14 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
 
                                   <div className="ml-4 flex flex-col gap-0.5">
                                     {groupModels.map(({ model }) => {
-                                      const modelHref = buildFilterHref(slug, brand, model);
+                                      const modelHref = buildFilterHref(slug, {
+                                        brand,
+                                        type: model,
+                                      });
                                       const isModelActive =
-                                        isBrandActive && activeSearch === model;
+                                        isActive &&
+                                        activeBrand === brand &&
+                                        activeType === model;
 
                                       return (
                                         <Link
@@ -267,9 +289,11 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
                             })}
 
                             {loose.map(({ model }) => {
-                              const modelHref = buildFilterHref(slug, brand, model);
+                              const modelHref = buildFilterHref(slug, { brand, type: model });
                               const isModelActive =
-                                isBrandActive && activeSearch === model;
+                                isActive &&
+                                activeBrand === brand &&
+                                activeType === model;
 
                               return (
                                 <Link

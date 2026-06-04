@@ -1,6 +1,10 @@
 import { isMockMode } from "@/lib/config";
 import { deriveProductModelType, getModelTypeSortRank } from "@/lib/model-type";
-import { tokenizeSearch } from "@/lib/search-utils";
+import {
+  isDeviceTypeSearch,
+  normalizeDeviceTypeSearch,
+  tokenizeSearch,
+} from "@/lib/search-utils";
 import {
   mockGetProductBrands,
   mockListProducts,
@@ -43,16 +47,26 @@ function sanitizeSearchTerm(term: string): string {
   return term.replace(/[%_,]/g, " ").trim();
 }
 
-/** Each word must match brand, model, or SKU (e.g. "Oppo A60" → brand + model). */
+/**
+ * Device type queries (e.g. "iPhone 17 PRO MAX") must match model_type only,
+ * otherwise token search lets "pro"/"max" match iPhone 13/14 Pro Max rows.
+ */
 function applySearchFilter(query: QueryBuilder, rawSearch: string): QueryBuilder {
-  const tokens = tokenizeSearch(rawSearch);
+  const term = sanitizeSearchTerm(rawSearch);
+  if (!term) return query;
+
+  if (isDeviceTypeSearch(term)) {
+    return query.ilike("model_type", `%${normalizeDeviceTypeSearch(term)}%`);
+  }
+
+  const tokens = tokenizeSearch(term);
   if (tokens.length === 0) return query;
 
   let q = query;
   for (const token of tokens) {
     const pattern = `%${token}%`;
     q = q.or(
-      `brand.ilike.${pattern},model_type.ilike.${pattern},model.ilike.${pattern},sku.ilike.${pattern}`
+      `brand.ilike.${pattern},model_type.ilike.${pattern},model.ilike.${pattern},sku.ilike.${pattern},color.ilike.${pattern}`
     );
   }
   return q;

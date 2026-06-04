@@ -8,6 +8,16 @@ export function tokenizeSearch(raw: string): string[] {
     .filter((t) => t.length > 0);
 }
 
+/** Sidebar / type searches like "iPhone 17 PRO MAX" should match model_type only. */
+export function isDeviceTypeSearch(raw: string): boolean {
+  const normalized = raw.replace(/[%_,]/g, " ").trim().toLowerCase();
+  return /^(iphone|ipad|galaxy|pixel|oppo|xiaomi|samsung|moto|nokia)\b/.test(normalized);
+}
+
+export function normalizeDeviceTypeSearch(raw: string): string {
+  return raw.replace(/[%_,]/g, " ").trim().replace(/\s+/g, " ");
+}
+
 export function productMatchesTokenizedSearch(
   brand: string,
   model: string,
@@ -15,7 +25,14 @@ export function productMatchesTokenizedSearch(
   rawSearch: string,
   modelType = ""
 ): boolean {
-  const tokens = tokenizeSearch(rawSearch);
+  const term = normalizeDeviceTypeSearch(rawSearch);
+  if (!term) return true;
+
+  if (isDeviceTypeSearch(term)) {
+    return (modelType ?? "").toLowerCase().includes(term.toLowerCase());
+  }
+
+  const tokens = tokenizeSearch(term);
   if (tokens.length === 0) return true;
 
   const b = brand.toLowerCase();

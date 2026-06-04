@@ -6,28 +6,63 @@ function matchFirst(text: string, patterns: RegExp[]): string | null {
   return null;
 }
 
+function normalizeIphoneVariantPart(part: string): string {
+  let v = part.replace(/\s+/g, " ").trim().toUpperCase();
+  if (v === "XSMAX") return "XS MAX";
+
+  // Glued forms from BigM titles: 13PROMAX, 13PRO, 6PPLUS, etc.
+  v = v.replace(/^(\d{1,2}[A-Z]?)(PROMAX)$/i, "$1 PRO MAX");
+  v = v.replace(/^(\d{1,2})(PROMAX)$/i, "$1 PRO MAX");
+  v = v.replace(/^(\d{1,2}[A-Z]?)(PRO\s*MAX)$/i, "$1 PRO MAX");
+  v = v.replace(/^(\d{1,2})(PRO\s*MAX)$/i, "$1 PRO MAX");
+  v = v.replace(/^(\d{1,2}[A-Z]?)(PRO)$/i, "$1 PRO");
+  v = v.replace(/^(\d{1,2})(PRO)$/i, "$1 PRO");
+  v = v.replace(/^(\d{1,2}[A-Z]?)(PLUS|MINI|AIR|MAX|E)$/i, "$1 $2");
+  v = v.replace(/^(\d{1,2})(PLUS|MINI|AIR|MAX|E)$/i, "$1 $2");
+
+  return v
+    .replace(/\bPRO\s*MAX\b/g, "PRO MAX")
+    .replace(/\bPRO\b/g, "PRO")
+    .replace(/\bPLUS\b/g, "PLUS")
+    .replace(/\bMINI\b/g, "MINI")
+    .replace(/\bAIR\b/g, "AIR")
+    .replace(/\bMAX\b/g, "MAX")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeIphoneVariant(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
-  const compact = normalized.replace(/\s+/g, "").toUpperCase();
-  if (compact === "XSMAX") return "XS MAX";
-
-  // Shared listings: 6P/7P/8P, 13/14, 14/15 Plus
   if (normalized.includes("/")) {
     return normalized
       .split("/")
-      .map((part) => part.trim().toUpperCase())
+      .map((part) => normalizeIphoneVariantPart(part.trim()))
       .join("/");
   }
+  return normalizeIphoneVariantPart(normalized);
+}
 
-  return normalized
-    .replace(/\bpro\s*max\b/gi, "PRO MAX")
-    .replace(/\bpro\b/gi, "PRO")
-    .replace(/\bplus\b/gi, "PLUS")
-    .replace(/\bmini\b/gi, "MINI")
-    .replace(/\bair\b/gi, "AIR")
-    .replace(/\bmax\b/gi, "MAX")
-    .replace(/\s+/g, " ")
-    .toUpperCase();
+/** Canonicalize stored model_type (e.g. iPhone 13PRO MAX → iPhone 13 PRO MAX). */
+export function canonicalizeModelType(modelType: string): string {
+  const trimmed = modelType.trim();
+  if (!trimmed) return "";
+  const iphone = trimmed.match(/^iPhone\s+(.+)$/i);
+  if (iphone) return `iPhone ${normalizeIphoneVariant(iphone[1])}`;
+  return trimmed;
+}
+
+/** DB rows may still use glued labels until migration/seed; match all aliases. */
+export function iphoneModelTypeAliases(canonical: string): string[] {
+  const normalized = canonicalizeModelType(canonical);
+  const iphone = normalized.match(/^iPhone\s+(.+)$/i);
+  if (!iphone) return [normalized];
+
+  const variant = iphone[1];
+  const aliases = new Set<string>([normalized]);
+  aliases.add(`iPhone ${variant.replace(/\s+/g, "")}`);
+  aliases.add(`iPhone ${variant.replace(/ PRO MAX/g, "PRO MAX")}`);
+  aliases.add(`iPhone ${variant.replace(/ PRO/g, "PRO")}`);
+  return [...aliases];
 }
 
 /** e.g. 6P/7P/8P or 13/14 — must run before single-digit iPhone patterns. */
@@ -48,8 +83,8 @@ function extractIphoneModelType(text: string): string | null {
     /\biPhone\s*(XR)(?=\s|\/|-|$)/i,
     /\biPhone\s*(X)(?=\s|\/|-|$)/i,
     /\biPhone\s*(SE)(?=\s|\/|-|$|\d)/i,
-    /\biPhone\s*(\d{1,2}\s*Pro\s*Max)(?=\s|\/|-|$)/i,
-    /\biPhone\s*(\d{1,2}\s*Pro)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}\s*Pro\s*Max|\d{1,2}Pro\s*Max|\d{1,2}PRO\s*MAX|\d{1,2}PROMAX)(?=\s|\/|-|$)/i,
+    /\biPhone\s*(\d{1,2}\s*Pro|\d{1,2}Pro|\d{1,2}PRO)(?!\s*Max)(?=\s|\/|-|$)/i,
     /\biPhone\s*(\d{1,2}\s*Plus)(?=\s|\/|-|$)/i,
     /\biPhone\s*(\d{1,2}\s*Mini)(?=\s|\/|-|$)/i,
     /\biPhone\s*(\d{1,2}\s*Air)(?=\s|\/|-|$)/i,

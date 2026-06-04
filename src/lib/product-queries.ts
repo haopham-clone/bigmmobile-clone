@@ -1,5 +1,10 @@
 import { isMockMode } from "@/lib/config";
-import { deriveProductModelType, getModelTypeSortRank } from "@/lib/model-type";
+import {
+  canonicalizeModelType,
+  deriveProductModelType,
+  getModelTypeSortRank,
+  iphoneModelTypeAliases,
+} from "@/lib/model-type";
 import {
   isDeviceTypeSearch,
   normalizeDeviceTypeSearch,
@@ -98,10 +103,11 @@ function applyListFilters(query: QueryBuilder, filters: ProductListFilters): Que
     q = q.eq("brand", filters.brand);
   }
 
-  const modelType = sanitizeSearchTerm(filters.modelType ?? "");
+  const modelType = canonicalizeModelType(sanitizeSearchTerm(filters.modelType ?? ""));
   const modelTypePrefix = sanitizeSearchTerm(filters.modelTypePrefix ?? "");
   if (modelType.length > 0) {
-    q = q.eq("model_type", modelType);
+    const aliases = iphoneModelTypeAliases(modelType);
+    q = aliases.length === 1 ? q.eq("model_type", aliases[0]) : q.in("model_type", aliases);
   } else if (modelTypePrefix.length > 0) {
     q = q.ilike("model_type", `${modelTypePrefix}%`);
   }
@@ -207,11 +213,11 @@ function buildSidebarTree(
 
   for (const row of rows) {
     if (!row.category || !row.brand || !row.model) continue;
-    // Prefer live derivation so sidebar stays correct before DB backfill/seed.
-    const modelGroup =
+    const modelGroup = canonicalizeModelType(
       deriveProductModelType(row.brand, row.model, row.category) ||
-      row.model_type?.trim() ||
-      "";
+        row.model_type ||
+        ""
+    );
     if (!modelGroup) continue;
 
     if (!byCategory.has(row.category)) byCategory.set(row.category, new Map());

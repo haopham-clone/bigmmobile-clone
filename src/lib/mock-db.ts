@@ -12,6 +12,7 @@ import type {
 } from "@/types/database";
 import { HIDDEN_CATEGORY_SLUGS, SIDEBAR_CATEGORIES } from "@/lib/categories";
 import { deriveProductModelType } from "@/lib/model-type";
+import { canonicalizeModelType } from "@/lib/model-type";
 import { productMatchesTokenizedSearch } from "@/lib/search-utils";
 
 const MOCK_USER_ID = "00000000-0000-4000-8000-000000000001";
@@ -228,10 +229,12 @@ function filterProductsForList(
     list = list.filter((p) => p.brand === filters.brand);
   }
 
-  const modelType = (filters.modelType ?? "").trim();
+  const modelType = canonicalizeModelType((filters.modelType ?? "").trim());
   const modelTypePrefix = (filters.modelTypePrefix ?? "").trim();
   if (modelType) {
-    list = list.filter((p) => (p.model_type ?? "") === modelType);
+    list = list.filter(
+      (p) => canonicalizeModelType(p.model_type ?? "") === modelType
+    );
   } else if (modelTypePrefix) {
     const prefix = modelTypePrefix.toLowerCase();
     list = list.filter((p) => (p.model_type ?? "").toLowerCase().startsWith(prefix));

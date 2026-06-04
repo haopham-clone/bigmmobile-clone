@@ -1,0 +1,35 @@
+---
+description: Do not suggest re-seeding products; production has live inventory and users
+alwaysApply: true
+---
+
+# Do not re-seed unless explicitly requested
+
+This project has **production data with real users and inventory**. Treat the `products` table as live—do not suggest running seed again as a default fix.
+
+## Default behavior
+
+- **Never** recommend `npm run seed:local`, `npm run seed:cloud`, or `scripts/seed-products.ts` unless the user **explicitly** asks to seed, re-import crawler JSON, or refresh the full catalog from BigM.
+- **Do not** list re-seed in "next steps", test plans, or migration follow-ups for bugs like `model_type`, sidebar labels, search, or UI filters.
+
+## What to use instead
+
+| Goal | Prefer |
+|------|--------|
+| Fix labels / `model_type` spelling | App code (`canonicalizeModelType`, aliases) + optional SQL migration (e.g. 009, 010) |
+| UI sidebar / filters | Deploy app changes only |
+| Schema changes | Supabase migrations only |
+| New catalog from crawler | Seed **only** when user requests a full catalog sync |
+
+## If seed is truly needed
+
+Only then, and only after user confirmation:
+
+- Note that seed **upserts** catalog fields and can **deactivate** SKUs missing from crawler JSON (quantities are preserved per SKU, but metadata and active flags can change).
+- Prefer **local/dev** first; warn before any production seed.
+- Never assume production is empty or disposable.
+
+## Examples
+
+- User: "iPhone 13PRO MAX duplicates in sidebar" → fix in `model-type.ts` / migrations; **do not** suggest seed.
+- User: "Re-import bigm_products.json into Supabase" → seed is appropriate because they asked.

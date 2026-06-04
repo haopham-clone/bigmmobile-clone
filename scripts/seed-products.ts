@@ -11,7 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { resolveCategorySlug } from "../src/lib/categories";
-import { deriveProductModelType } from "../src/lib/model-type";
+import { canonicalizeModelType, deriveProductModelType } from "../src/lib/model-type";
 
 interface CrawlerProduct {
   name: string;
@@ -179,7 +179,9 @@ function mapProduct(row: CrawlerProduct, sku: string) {
   return {
     image_url: row.image_url || null,
     brand,
-    model_type: deriveProductModelType(brand, model, resolveCategorySlug(row.category, row.name)),
+    model_type: canonicalizeModelType(
+      deriveProductModelType(brand, model, resolveCategorySlug(row.category, row.name))
+    ),
     model,
     storage_ram: extractStorageRam(row.name),
     color: row.color?.trim() || extractColor(row.name),

@@ -10,6 +10,15 @@ function normalizeIphoneVariant(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   const compact = normalized.replace(/\s+/g, "").toUpperCase();
   if (compact === "XSMAX") return "XS MAX";
+
+  // Shared listings: 6P/7P/8P, 13/14, 14/15 Plus
+  if (normalized.includes("/")) {
+    return normalized
+      .split("/")
+      .map((part) => part.trim().toUpperCase())
+      .join("/");
+  }
+
   return normalized
     .replace(/\bpro\s*max\b/gi, "PRO MAX")
     .replace(/\bpro\b/gi, "PRO")
@@ -21,8 +30,17 @@ function normalizeIphoneVariant(value: string): string {
     .toUpperCase();
 }
 
+/** e.g. 6P/7P/8P or 13/14 — must run before single-digit iPhone patterns. */
+const IPHONE_MULTI_MODEL_PATTERN =
+  /\biPhone\s*((?:\d{1,2}[A-Z]?)(?:\/\d{1,2}[A-Z]?)+)(?=\s|\/|-|$)/i;
+
 /** Longest suffix first so "17 Pro Max" is not truncated to "17 Pro" or "17". */
 function extractIphoneModelType(text: string): string | null {
+  const multiModel = text.match(IPHONE_MULTI_MODEL_PATTERN);
+  if (multiModel?.[1]) {
+    return `iPhone ${normalizeIphoneVariant(multiModel[1])}`;
+  }
+
   const patterns: RegExp[] = [
     /\biPhone\s*(X\/XS)(?=\s|\/|-|$)/i,
     /\biPhone\s*(XS\s*Max)(?=\s|\/|-|$)/i,
@@ -152,6 +170,11 @@ export function deriveProductModelType(
     )[0]
     ?.trim();
   const fallback = beforeAccessoryWords || text;
+
+  const multiFromFallback = fallback.match(IPHONE_MULTI_MODEL_PATTERN);
+  if (multiFromFallback?.[1]) {
+    return `iPhone ${normalizeIphoneVariant(multiFromFallback[1])}`;
+  }
 
   return fallback.split(/\s+/).slice(0, 4).join(" ");
 }

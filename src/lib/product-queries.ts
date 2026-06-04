@@ -207,8 +207,11 @@ function buildSidebarTree(
 
   for (const row of rows) {
     if (!row.category || !row.brand || !row.model) continue;
+    // Prefer live derivation so sidebar stays correct before DB backfill/seed.
     const modelGroup =
-      row.model_type?.trim() || deriveProductModelType(row.brand, row.model, row.category);
+      deriveProductModelType(row.brand, row.model, row.category) ||
+      row.model_type?.trim() ||
+      "";
     if (!modelGroup) continue;
 
     if (!byCategory.has(row.category)) byCategory.set(row.category, new Map());

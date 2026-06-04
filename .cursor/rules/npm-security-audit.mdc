@@ -1,0 +1,54 @@
+---
+description: Run npm audit and review vulnerabilities when changing dependencies
+globs: package.json,package-lock.json
+alwaysApply: false
+---
+
+# npm dependency security
+
+npm supply-chain attacks and CVEs are common. Treat dependency changes as a security review, not only a feature change.
+
+## When this applies
+
+- Editing `package.json` or `package-lock.json`
+- Running `npm install`, `npm add`, `npm update`, or `npm ci`
+- User asks to add, upgrade, or remove a package
+- Before merging work that touches the lockfile
+
+## Required checks (run in the project root)
+
+1. **Audit the tree**
+   ```bash
+   npm audit
+   npm run audit:high
+   ```
+2. If vulnerabilities appear, inspect **which package and version** is affected (direct vs transitive).
+3. Prefer **patch/minor bumps** on the vulnerable package or its parent over blind `npm audit fix --force`.
+4. Re-run `npm audit` after changes and confirm **high/critical** are resolved or documented.
+
+## Adding or upgrading packages
+
+- Prefer well-known packages; watch for **typosquatting** (names close to popular libs).
+- Avoid unnecessary new dependencies; fewer packages = smaller attack surface.
+- Pin risky upgrades explicitly; do not use `*` or overly wide ranges without reason.
+- After install, commit **`package-lock.json`** so CI and production resolve the same versions.
+
+## Fixing findings
+
+| Situation | Action |
+|-----------|--------|
+| Fix available in range | `npm audit fix` then re-audit |
+| Needs major bump | Upgrade the direct dependency; test the app |
+| No fix yet / nested in Next | Use `overrides` to pin patched transitive versions; **never** use `npm audit fix --force` if it downgrades Next |
+| PostCSS &lt;8.5.10 via `next` | `"overrides": { "postcss": "^8.5.10" }` + bump dev `postcss`; do not `audit fix --force` |
+| Dev-only, low severity | May defer; still report to the user |
+
+## Do not
+
+- Ignore audit output when closing a dependency-related task
+- Run `npm audit fix --force` on production branches without explaining breakage risk
+- Add packages from unverified sources or one-off git URLs without user approval
+
+## Report to the user
+
+Summarize: count by severity, affected package names, recommended version bumps, and whether `npm run audit:high` passes.

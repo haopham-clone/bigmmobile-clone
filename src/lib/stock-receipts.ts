@@ -7,7 +7,7 @@ import type {
 } from "@/types/database";
 import { HIDDEN_CATEGORY_SLUGS } from "@/lib/categories";
 import { isMockMode } from "@/lib/config";
-import { deriveProductModelType } from "@/lib/model-type";
+import { expandNewProductLine, receiptTotalQuantity } from "@/lib/stock-receipt-expand";
 import {
   mockListActiveProducts,
   mockListStockReceipts,
@@ -49,6 +49,7 @@ export async function fetchActiveProductsForStockIn(): Promise<{
 
 export async function submitStockReceipt(
   userId: string,
+  userEmail: string,
   input: StockReceiptInput
 ): Promise<{ receiptId?: string; error?: string }> {
   if (input.lines.length === 0) {
@@ -56,16 +57,31 @@ export async function submitStockReceipt(
   }
 
   if (isMockMode()) {
-    return mockSubmitStockReceipt(userId, input);
+    return mockSubmitStockReceipt(userId, userEmail, input);
   }
 
   const supabase = await createClient();
-  const totalQuantity = input.lines.reduce((sum, l) => sum + l.quantity_received, 0);
+  const usedSkus = new Set<string>();
+
+  for (const line of input.lines) {
+    if (line.mode !== "new") continue;
+    const { rows, error } = expandNewProductLine(line);
+    if (error) return { error };
+    for (const row of rows) {
+      if (usedSkus.has(row.sku)) {
+        return { error: `Duplicate SKU in receipt: ${row.sku}` };
+      }
+      usedSkus.add(row.sku);
+    }
+  }
+
+  const totalQuantity = receiptTotalQuantity(input.lines);
 
   const { data: receipt, error: receiptError } = await supabase
     .from("stock_receipts")
     .insert({
       user_id: userId,
+      received_by_email: userEmail || null,
       invoice_number: input.invoice_number || null,
       note: input.note || null,
       total_quantity: totalQuantity,
@@ -79,13 +95,56 @@ export async function submitStockReceipt(
 
   const receiptId = receipt.id as string;
 
-  for (const line of input.lines) {
-    let product: Product | null = null;
+  async function receiveProduct(
+    product: Product,
+    quantityReceived: number
+  ): Promise<{ error?: string }> {
+    const prevQty = product.quantity;
+    const newQty = prevQty + quantityReceived;
 
+    const { error: updateError } = await supabase
+      .from("products")
+      .update({ quantity: newQty, updated_at: new Date().toISOString() })
+      .eq("id", product.id);
+
+    if (updateError) return { error: updateError.message };
+
+    const { error: itemError } = await supabase.from("stock_receipt_items").insert({
+      receipt_id: receiptId,
+      product_id: product.id,
+      sku: product.sku,
+      brand: product.brand,
+      model: product.model,
+      category: product.category,
+      quantity_received: quantityReceived,
+      previous_quantity: prevQty,
+      new_quantity: newQty,
+    });
+
+    if (itemError) return { error: itemError.message };
+
+    const { error: logError } = await supabase.from("stock_logs").insert({
+      product_id: product.id,
+      user_id: userId,
+      action: "RECEIVED_STOCK",
+      quantity_changed: quantityReceived,
+      new_quantity: newQty,
+    });
+
+    if (logError) return { error: logError.message };
+    product.quantity = newQty;
+    return {};
+  }
+
+  for (const line of input.lines) {
     if (line.mode === "existing") {
       if (!line.product_id) {
         await supabase.from("stock_receipts").delete().eq("id", receiptId);
         return { error: "Existing line missing product" };
+      }
+      if (!line.quantity_received || line.quantity_received < 1) {
+        await supabase.from("stock_receipts").delete().eq("id", receiptId);
+        return { error: "Existing line missing quantity" };
       }
 
       const { data, error } = await supabase
@@ -99,33 +158,42 @@ export async function submitStockReceipt(
         await supabase.from("stock_receipts").delete().eq("id", receiptId);
         return { error: "Product not found or inactive" };
       }
-      product = normalizeProduct(data as Record<string, unknown>);
-    } else {
-      if (!line.brand || !line.model || !line.sku || !line.category) {
-        await supabase.from("stock_receipts").delete().eq("id", receiptId);
-        return { error: "New product line missing required fields" };
-      }
 
-      if (HIDDEN_CATEGORY_SLUGS.has(line.category as never)) {
+      const product = normalizeProduct(data as Record<string, unknown>);
+      const result = await receiveProduct(product, line.quantity_received ?? 0);
+      if (result.error) {
         await supabase.from("stock_receipts").delete().eq("id", receiptId);
-        return { error: "Cannot create products in hidden category" };
+        return { error: result.error };
       }
+      continue;
+    }
 
+    const { rows, error: expandError } = expandNewProductLine(line);
+    if (expandError) {
+      await supabase.from("stock_receipts").delete().eq("id", receiptId);
+      return { error: expandError };
+    }
+
+    if (rows.length > 0 && HIDDEN_CATEGORY_SLUGS.has(rows[0].category as never)) {
+      await supabase.from("stock_receipts").delete().eq("id", receiptId);
+      return { error: "Cannot create products in hidden category" };
+    }
+
+    for (const row of rows) {
       const { data, error } = await supabase
         .from("products")
         .insert({
-          image_url: line.image_url ?? null,
-          brand: line.brand,
-          model_type:
-            line.model_type || deriveProductModelType(line.brand, line.model, line.category),
-          model: line.model,
-          storage_ram: line.storage_ram ?? null,
-          color: line.color ?? null,
-          condition: line.condition ?? null,
-          category: line.category,
-          sku: line.sku,
-          cost_price: line.cost_price ?? 0,
-          selling_price: line.selling_price ?? 0,
+          image_url: row.image_url,
+          brand: row.brand,
+          model_type: row.model_type,
+          model: row.model,
+          storage_ram: row.storage_ram,
+          color: row.color,
+          condition: row.condition,
+          category: row.category,
+          sku: row.sku,
+          cost_price: row.cost_price,
+          selling_price: row.selling_price,
           quantity: 0,
           is_active: true,
         })
@@ -134,53 +202,18 @@ export async function submitStockReceipt(
 
       if (error || !data) {
         await supabase.from("stock_receipts").delete().eq("id", receiptId);
-        if (error?.code === "23505") return { error: `SKU already exists: ${line.sku}` };
+        if (error?.code === "23505") {
+          return { error: `SKU already exists (${row.color}): ${row.sku}` };
+        }
         return { error: error?.message ?? "Failed to create product" };
       }
-      product = normalizeProduct(data as Record<string, unknown>);
-    }
 
-    const prevQty = product.quantity;
-    const newQty = prevQty + line.quantity_received;
-
-    const { error: updateError } = await supabase
-      .from("products")
-      .update({ quantity: newQty, updated_at: new Date().toISOString() })
-      .eq("id", product.id);
-
-    if (updateError) {
-      await supabase.from("stock_receipts").delete().eq("id", receiptId);
-      return { error: updateError.message };
-    }
-
-    const { error: itemError } = await supabase.from("stock_receipt_items").insert({
-      receipt_id: receiptId,
-      product_id: product.id,
-      sku: product.sku,
-      brand: product.brand,
-      model: product.model,
-      category: product.category,
-      quantity_received: line.quantity_received,
-      previous_quantity: prevQty,
-      new_quantity: newQty,
-    });
-
-    if (itemError) {
-      await supabase.from("stock_receipts").delete().eq("id", receiptId);
-      return { error: itemError.message };
-    }
-
-    const { error: logError } = await supabase.from("stock_logs").insert({
-      product_id: product.id,
-      user_id: userId,
-      action: "RECEIVED_STOCK",
-      quantity_changed: line.quantity_received,
-      new_quantity: newQty,
-    });
-
-    if (logError) {
-      await supabase.from("stock_receipts").delete().eq("id", receiptId);
-      return { error: logError.message };
+      const product = normalizeProduct(data as Record<string, unknown>);
+      const result = await receiveProduct(product, row.quantity_received);
+      if (result.error) {
+        await supabase.from("stock_receipts").delete().eq("id", receiptId);
+        return { error: result.error };
+      }
     }
   }
 

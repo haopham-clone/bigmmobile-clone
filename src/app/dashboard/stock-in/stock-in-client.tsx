@@ -3,11 +3,27 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import type { CategorySlug } from "@/lib/categories";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
+import { deriveProductModelType } from "@/lib/model-type";
+import {
+  generateStockReceiptInvoiceNumber,
+  isValidStockReceiptInvoiceNumber,
+} from "@/lib/stock-receipt-invoice";
 import { submitStockReceiptAction } from "./actions";
-import { ProductSearchSelect } from "@/components/product-search-select";
+import type { StockReceiptLineInput } from "@/types/database";
+import {
+  ColorVariantsEditor,
+  newColorVariant,
+  type ColorVariantRow,
+} from "@/components/stock-in/color-variants-editor";
+import {
+  ExistingModelTypeStockEditor,
+  type ExistingProductVariantRow,
+} from "@/components/stock-in/existing-model-type-editor";
+import { DeviceModelTypeField } from "@/components/stock-in/device-model-type-field";
+import { SelectWithOtherField } from "@/components/stock-in/select-with-other-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,8 +43,6 @@ type LineMode = "existing" | "new";
 interface LineRow {
   key: string;
   mode: LineMode;
-  product_id: string;
-  quantity_received: number;
   brand: string;
   model_type: string;
   model: string;
@@ -37,16 +51,15 @@ interface LineRow {
   cost_price: number;
   selling_price: number;
   storage_ram: string;
-  color: string;
   condition: string;
+  color_variants: ColorVariantRow[];
+  existing_variants: ExistingProductVariantRow[];
 }
 
 function newLine(mode: LineMode = "existing"): LineRow {
   return {
     key: crypto.randomUUID(),
     mode,
-    product_id: "",
-    quantity_received: 1,
     brand: "",
     model_type: "",
     model: "",
@@ -55,19 +68,37 @@ function newLine(mode: LineMode = "existing"): LineRow {
     cost_price: 0,
     selling_price: 0,
     storage_ram: "",
-    color: "",
     condition: "",
+    color_variants: [newColorVariant()],
+    existing_variants: [],
   };
 }
 
-export function StockInClient() {
+function lineTotalQuantity(line: LineRow): number {
+  if (line.mode === "existing") {
+    return line.existing_variants.reduce((sum, v) => sum + (v.quantity_received || 0), 0);
+  }
+  return line.color_variants.reduce((sum, v) => sum + (v.quantity_received || 0), 0);
+}
+
+interface StockInClientProps {
+  deviceModelTypeSuggestions?: string[];
+  deviceModelTypesByCategory?: Record<string, string[]>;
+  brandSuggestions?: string[];
+}
+
+export function StockInClient({
+  deviceModelTypeSuggestions = [],
+  deviceModelTypesByCategory = {},
+  brandSuggestions = [],
+}: StockInClientProps) {
   const router = useRouter();
-  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState(generateStockReceiptInvoiceNumber);
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<LineRow[]>([newLine()]);
   const [isPending, startTransition] = useTransition();
 
-  const totalQty = lines.reduce((sum, l) => sum + (l.quantity_received || 0), 0);
+  const totalQty = lines.reduce((sum, l) => sum + lineTotalQuantity(l), 0);
 
   function updateLine(key: string, patch: Partial<LineRow>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -77,33 +108,67 @@ export function StockInClient() {
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.key !== key)));
   }
 
+  function handleModelBlur(lineKey: string) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== lineKey || l.model_type.trim()) return l;
+        const derived = deriveProductModelType(l.brand, l.model, l.category);
+        return derived ? { ...l, model_type: derived } : l;
+      })
+    );
+  }
+
   function handleSubmit() {
-    const payload = {
-      invoice_number: invoiceNumber.trim() || undefined,
-      note: note.trim() || undefined,
-      lines: lines.map((line) => {
-        if (line.mode === "existing") {
-          return {
-            mode: "existing" as const,
-            product_id: line.product_id,
-            quantity_received: line.quantity_received,
-          };
+    const receiptLines: StockReceiptLineInput[] = [];
+
+    for (const line of lines) {
+      if (line.mode === "existing") {
+        for (const variant of line.existing_variants) {
+          if (variant.quantity_received > 0) {
+            receiptLines.push({
+              mode: "existing",
+              product_id: variant.product_id,
+              quantity_received: variant.quantity_received,
+            });
+          }
         }
-        return {
-          mode: "new" as const,
-          quantity_received: line.quantity_received,
-          brand: line.brand.trim(),
-          model_type: line.model_type.trim() || undefined,
-          model: line.model.trim(),
-          sku: line.sku.trim(),
-          category: line.category,
-          cost_price: line.cost_price,
-          selling_price: line.selling_price,
-          storage_ram: line.storage_ram.trim() || undefined,
-          color: line.color.trim() || undefined,
-          condition: line.condition.trim() || undefined,
-        };
-      }),
+        continue;
+      }
+
+      receiptLines.push({
+        mode: "new",
+        brand: line.brand.trim(),
+        model_type: line.model_type.trim() || undefined,
+        model: line.model.trim(),
+        base_sku: line.sku.trim() || undefined,
+        category: line.category,
+        cost_price: line.cost_price,
+        selling_price: line.selling_price,
+        storage_ram: line.storage_ram.trim() || undefined,
+        condition: line.condition.trim() || undefined,
+        color_variants: line.color_variants.map((v) => ({
+          color: v.color.trim(),
+          quantity_received: v.quantity_received,
+          sku: v.sku.trim() || undefined,
+        })),
+      });
+    }
+
+    if (receiptLines.length === 0) {
+      toast.error("Add at least one line with quantity received");
+      return;
+    }
+
+    const invoice = invoiceNumber.trim();
+    if (!isValidStockReceiptInvoiceNumber(invoice)) {
+      toast.error("Invoice must use format MM-DD-YYYY-XXXXXX");
+      return;
+    }
+
+    const payload = {
+      invoice_number: invoice,
+      note: note.trim() || undefined,
+      lines: receiptLines,
     };
 
     startTransition(async () => {
@@ -129,14 +194,31 @@ export function StockInClient() {
           <CardTitle className="text-base">Receipt details</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
+          <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="invoice">Invoice / reference number</Label>
-            <Input
-              id="invoice"
-              placeholder="INV-2026-001"
-              value={invoiceNumber}
-              onChange={(e) => setInvoiceNumber(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="invoice"
+                className="font-mono"
+                placeholder="06-02-2026-A3F9K2"
+                value={invoiceNumber}
+                onChange={(e) => setInvoiceNumber(e.target.value.toUpperCase())}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setInvoiceNumber(generateStockReceiptInvoiceNumber())}
+                aria-label="Generate new invoice number"
+                title="Generate new number"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Format: MM-DD-YYYY-XXXXXX (6 random uppercase letters or digits). Auto-generated on load.
+            </p>
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="note">Notes</Label>
@@ -184,7 +266,12 @@ export function StockInClient() {
                 <Select
                   value={line.mode}
                   onValueChange={(v) =>
-                    updateLine(line.key, { mode: v as LineMode, product_id: "" })
+                    updateLine(line.key, {
+                      mode: v as LineMode,
+                      color_variants:
+                        v === "new" ? [newColorVariant()] : line.color_variants,
+                      existing_variants: v === "existing" ? [] : line.existing_variants,
+                    })
                   }
                 >
                   <SelectTrigger className="h-8 w-36">
@@ -211,26 +298,15 @@ export function StockInClient() {
             <CardContent className="space-y-4">
               {line.mode === "existing" ? (
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Product</Label>
-                    <ProductSearchSelect
-                      value={line.product_id}
-                      onChange={(productId) => updateLine(line.key, { product_id: productId })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Quantity received</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={line.quantity_received}
-                      onChange={(e) =>
-                        updateLine(line.key, {
-                          quantity_received: Math.max(1, Number(e.target.value) || 1),
-                        })
-                      }
-                    />
-                  </div>
+                  <ExistingModelTypeStockEditor
+                    modelType={line.model_type}
+                    modelTypeSuggestions={deviceModelTypeSuggestions}
+                    onModelTypeChange={(model_type) => updateLine(line.key, { model_type })}
+                    variants={line.existing_variants}
+                    onVariantsChange={(existing_variants) =>
+                      updateLine(line.key, { existing_variants })
+                    }
+                  />
                 </div>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -253,35 +329,41 @@ export function StockInClient() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>SKU</Label>
+                    <Label>Base SKU (optional)</Label>
                     <Input
                       value={line.sku}
                       onChange={(e) => updateLine(line.key, { sku: e.target.value })}
-                      placeholder="unique-sku"
+                      placeholder="iphone-17-case"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Used to auto-generate per-color SKUs when left blank on a color row.
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Brand</Label>
-                    <Input
-                      value={line.brand}
-                      onChange={(e) => updateLine(line.key, { brand: e.target.value })}
-                    />
-                  </div>
+                  <SelectWithOtherField
+                    label="Brand"
+                    options={brandSuggestions}
+                    value={line.brand}
+                    onChange={(brand) => updateLine(line.key, { brand })}
+                    selectPlaceholder="Select brand"
+                    otherPlaceholder="Enter brand name"
+                  />
                   <div className="space-y-2">
                     <Label>Model</Label>
                     <Input
                       value={line.model}
                       onChange={(e) => updateLine(line.key, { model: e.target.value })}
+                      onBlur={() => handleModelBlur(line.key)}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Model type</Label>
-                    <Input
-                      value={line.model_type}
-                      onChange={(e) => updateLine(line.key, { model_type: e.target.value })}
-                      placeholder="iPhone 17"
-                    />
-                  </div>
+                  <DeviceModelTypeField
+                    value={line.model_type}
+                    options={
+                      deviceModelTypesByCategory[line.category]?.length
+                        ? deviceModelTypesByCategory[line.category]
+                        : deviceModelTypeSuggestions
+                    }
+                    onChange={(model_type) => updateLine(line.key, { model_type })}
+                  />
                   <div className="space-y-2">
                     <Label>Cost (AUD)</Label>
                     <Input
@@ -314,25 +396,16 @@ export function StockInClient() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Color</Label>
+                    <Label>Condition</Label>
                     <Input
-                      value={line.color}
-                      onChange={(e) => updateLine(line.key, { color: e.target.value })}
+                      value={line.condition}
+                      onChange={(e) => updateLine(line.key, { condition: e.target.value })}
                     />
                   </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label>Quantity received</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={line.quantity_received}
-                      onChange={(e) =>
-                        updateLine(line.key, {
-                          quantity_received: Math.max(1, Number(e.target.value) || 1),
-                        })
-                      }
-                    />
-                  </div>
+                  <ColorVariantsEditor
+                    variants={line.color_variants}
+                    onChange={(color_variants) => updateLine(line.key, { color_variants })}
+                  />
                 </div>
               )}
             </CardContent>

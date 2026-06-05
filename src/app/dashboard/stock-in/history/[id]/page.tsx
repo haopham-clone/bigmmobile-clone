@@ -55,6 +55,10 @@ export default async function ReceiptDetailPage({ params }: ReceiptDetailPagePro
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-3">
           <div>
+            <p className="text-sm text-muted-foreground">Received by</p>
+            <p className="font-medium">{receipt.received_by_email ?? "—"}</p>
+          </div>
+          <div>
             <p className="text-sm text-muted-foreground">Invoice / reference</p>
             <p className="font-medium">{receipt.invoice_number ?? "—"}</p>
           </div>

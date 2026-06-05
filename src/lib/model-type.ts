@@ -42,6 +42,22 @@ function normalizeIphoneVariant(value: string): string {
   return normalizeIphoneVariantPart(normalized);
 }
 
+/** Device family label (iPhone 17 PRO MAX), not accessory SKUs like "60W". */
+export function isDeviceModelTypeLabel(label: string): boolean {
+  const normalized = label.trim();
+  if (!normalized) return false;
+  if (normalized === "Other Phone Cases") return true;
+
+  return (
+    /^(iPhone|iPad)\b/i.test(normalized) ||
+    /^Galaxy\s+(?:S|A|M|Note|Z)\b/i.test(normalized) ||
+    /^Pixel\s+\d/i.test(normalized) ||
+    /^(?:OPPO|Oppo|Xiaomi|Redmi|Moto|Nokia)\b/i.test(normalized) ||
+    /^(?:\d{1,2}[A-Z]?)(?:\/\d{1,2}[A-Z]?)+/.test(normalized) ||
+    /^iPhone\s*\d/i.test(normalized)
+  );
+}
+
 /** Canonicalize stored model_type (e.g. iPhone 13PRO MAX → iPhone 13 PRO MAX). */
 export function canonicalizeModelType(modelType: string): string {
   const trimmed = modelType.trim();

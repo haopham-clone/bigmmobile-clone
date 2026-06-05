@@ -18,6 +18,7 @@ import {
   productMatchesModelTypeFilter,
 } from "@/lib/model-type";
 import { productMatchesTokenizedSearch } from "@/lib/search-utils";
+import { expandNewProductLine, receiptTotalQuantity } from "@/lib/stock-receipt-expand";
 
 const MOCK_USER_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -325,6 +326,31 @@ export function mockSearchActiveProducts(search: string, limit: number): Product
   }).slice(0, limit);
 }
 
+export function mockListActiveProductsByModelType(modelType: string): Product[] {
+  return filterProductsForList(getStore().products, {
+    hideInactive: true,
+    modelType,
+  }).sort((a, b) => {
+    const colorCmp = (a.color ?? "").localeCompare(b.color ?? "");
+    return colorCmp || a.model.localeCompare(b.model);
+  });
+}
+
+export function mockListActiveProductsByModel(search: string, limit: number): Product[] {
+  const q = search.trim().toLowerCase();
+  const seen = new Set<string>();
+  const result: Product[] = [];
+  for (const product of getStore().products) {
+    if (!product.is_active || product.category === "devices") continue;
+    if (!product.model.toLowerCase().includes(q)) continue;
+    if (seen.has(product.model)) continue;
+    seen.add(product.model);
+    result.push(product);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
 export function mockGetProduct(productId: string): Product | null {
   return getStore().products.find((p) => p.id === productId) ?? null;
 }
@@ -462,14 +488,27 @@ export function mockListActiveProducts(): Product[] {
 
 export function mockSubmitStockReceipt(
   userId: string,
+  userEmail: string,
   input: StockReceiptInput
 ): { receiptId?: string; error?: string } {
   const store = getStore();
-  const totalQuantity = input.lines.reduce((sum, l) => sum + l.quantity_received, 0);
+  const usedSkus = new Set<string>();
+  for (const line of input.lines) {
+    if (line.mode !== "new") continue;
+    const { rows, error } = expandNewProductLine(line);
+    if (error) return { error };
+    for (const row of rows) {
+      if (usedSkus.has(row.sku)) return { error: `Duplicate SKU in receipt: ${row.sku}` };
+      usedSkus.add(row.sku);
+    }
+  }
+
+  const totalQuantity = receiptTotalQuantity(input.lines);
 
   const receipt: StockReceipt = {
     id: id(),
     user_id: userId,
+    received_by_email: userEmail || null,
     invoice_number: input.invoice_number ?? null,
     note: input.note ?? null,
     total_quantity: totalQuantity,
@@ -478,45 +517,9 @@ export function mockSubmitStockReceipt(
 
   const pendingItems: StockReceiptItem[] = [];
 
-  for (const line of input.lines) {
-    let product: Product | undefined;
-
-    if (line.mode === "existing") {
-      product = store.products.find(
-        (p) => p.id === line.product_id && p.is_active
-      );
-      if (!product) return { error: "Product not found or inactive" };
-    } else {
-      if (!line.brand || !line.model || !line.sku || !line.category) {
-        return { error: "New product line missing required fields" };
-      }
-      if (store.products.some((p) => p.sku === line.sku)) {
-        return { error: `SKU already exists: ${line.sku}` };
-      }
-      product = {
-        id: id(),
-        image_url: line.image_url ?? null,
-        brand: line.brand,
-        model_type:
-          line.model_type || deriveProductModelType(line.brand, line.model, line.category),
-        model: line.model,
-        storage_ram: line.storage_ram ?? null,
-        color: line.color ?? null,
-        condition: line.condition ?? null,
-        category: line.category,
-        sku: line.sku,
-        cost_price: line.cost_price ?? 0,
-        selling_price: line.selling_price ?? 0,
-        quantity: 0,
-        is_active: true,
-        created_at: now(),
-        updated_at: now(),
-      };
-      store.products.push(product);
-    }
-
+  function receiveProduct(product: Product, quantityReceived: number) {
     const prevQty = product.quantity;
-    const newQty = prevQty + line.quantity_received;
+    const newQty = prevQty + quantityReceived;
     product.quantity = newQty;
     product.updated_at = now();
 
@@ -528,7 +531,7 @@ export function mockSubmitStockReceipt(
       brand: product.brand,
       model: product.model,
       category: product.category as string,
-      quantity_received: line.quantity_received,
+      quantity_received: quantityReceived,
       previous_quantity: prevQty,
       new_quantity: newQty,
       created_at: now(),
@@ -539,10 +542,54 @@ export function mockSubmitStockReceipt(
       product_id: product.id,
       user_id: userId,
       action: "RECEIVED_STOCK" as StockAction,
-      quantity_changed: line.quantity_received,
+      quantity_changed: quantityReceived,
       new_quantity: newQty,
       created_at: now(),
     });
+  }
+
+  for (const line of input.lines) {
+    if (line.mode === "existing") {
+      const product = store.products.find(
+        (p) => p.id === line.product_id && p.is_active
+      );
+      if (!product) return { error: "Product not found or inactive" };
+      if (!line.quantity_received || line.quantity_received < 1) {
+        return { error: "Existing line missing quantity" };
+      }
+      receiveProduct(product, line.quantity_received);
+      continue;
+    }
+
+    const { rows, error: expandError } = expandNewProductLine(line);
+    if (expandError) return { error: expandError };
+
+    for (const row of rows) {
+      if (store.products.some((p) => p.sku === row.sku)) {
+        return { error: `SKU already exists (${row.color}): ${row.sku}` };
+      }
+
+      const product: Product = {
+        id: id(),
+        image_url: row.image_url,
+        brand: row.brand,
+        model_type: row.model_type,
+        model: row.model,
+        storage_ram: row.storage_ram,
+        color: row.color,
+        condition: row.condition,
+        category: row.category,
+        sku: row.sku,
+        cost_price: row.cost_price,
+        selling_price: row.selling_price,
+        quantity: 0,
+        is_active: true,
+        created_at: now(),
+        updated_at: now(),
+      };
+      store.products.push(product);
+      receiveProduct(product, row.quantity_received);
+    }
   }
 
   store.receipts.unshift(receipt);

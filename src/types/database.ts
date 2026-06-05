@@ -88,6 +88,7 @@ export interface PaginatedProducts {
 export interface StockReceipt {
   id: string;
   user_id: string;
+  received_by_email: string | null;
   invoice_number: string | null;
   note: string | null;
   total_quantity: number;
@@ -112,20 +113,30 @@ export interface StockReceiptWithItems extends StockReceipt {
   items: StockReceiptItem[];
 }
 
+export interface StockReceiptColorVariantInput {
+  color: string;
+  quantity_received: number;
+  sku?: string;
+}
+
 export interface StockReceiptLineInput {
   mode: "existing" | "new";
   product_id?: string;
-  quantity_received: number;
+  /** Required for existing lines; optional for new lines when color_variants is set. */
+  quantity_received?: number;
   // new product fields
   brand?: string;
   model_type?: string | null;
   model?: string;
+  /** Optional base SKU for auto-generating per-color SKUs. */
+  base_sku?: string;
   sku?: string;
   category?: string;
   cost_price?: number;
   selling_price?: number;
   storage_ram?: string | null;
   color?: string | null;
+  color_variants?: StockReceiptColorVariantInput[];
   condition?: string | null;
   image_url?: string | null;
 }

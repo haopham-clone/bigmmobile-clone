@@ -38,6 +38,7 @@ export default async function StockInHistoryPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
+              <TableHead>Received by</TableHead>
               <TableHead>Invoice / Ref</TableHead>
               <TableHead>Note</TableHead>
               <TableHead className="text-right">Total qty</TableHead>
@@ -47,7 +48,7 @@ export default async function StockInHistoryPage() {
           <TableBody>
             {receipts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                   No receipts yet
                 </TableCell>
               </TableRow>
@@ -57,6 +58,7 @@ export default async function StockInHistoryPage() {
                   <TableCell>
                     {new Date(receipt.created_at).toLocaleString("en-AU")}
                   </TableCell>
+                  <TableCell>{receipt.received_by_email ?? "—"}</TableCell>
                   <TableCell className="font-mono text-sm">
                     {receipt.invoice_number ?? "—"}
                   </TableCell>

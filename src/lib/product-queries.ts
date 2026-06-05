@@ -4,6 +4,7 @@ import {
   canonicalizeModelType,
   deriveProductModelType,
   getModelTypeSortRank,
+  isDeviceModelTypeLabel,
 } from "@/lib/model-type";
 import {
   isDeviceTypeSearch,
@@ -14,6 +15,8 @@ import {
   mockGetProductBrands,
   mockListProducts,
   mockListProductsPaginated,
+  mockListActiveProductsByModel,
+  mockListActiveProductsByModelType,
   mockSearchActiveProducts,
 } from "@/lib/mock-db";
 import { createClient } from "@/utils/supabase/server";
@@ -251,6 +254,63 @@ function buildSidebarTree(
     }));
 }
 
+const DEVICE_MODEL_TYPE_CATEGORIES = new Set([
+  "phone-cases",
+  "tablet-cases",
+  "screen-protectors",
+  "phone-parts",
+  "tablet-parts",
+]);
+
+/** Unique model type labels from the sidebar tree (same order as inventory nav). */
+export function collectModelTypesFromSidebarTree(
+  tree: SidebarProductCategory[]
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const category of tree) {
+    for (const brand of category.brands) {
+      for (const { model } of brand.models) {
+        if (!seen.has(model)) {
+          seen.add(model);
+          result.push(model);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/** Device families only (iPhone 17 PRO MAX), not chargers/accessory group labels. */
+export function collectDeviceModelTypesFromSidebarTree(
+  tree: SidebarProductCategory[],
+  categorySlug?: string
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const category of tree) {
+    if (categorySlug) {
+      if (category.category !== categorySlug) continue;
+    } else if (!DEVICE_MODEL_TYPE_CATEGORIES.has(category.category)) {
+      continue;
+    }
+
+    for (const brand of category.brands) {
+      for (const { model } of brand.models) {
+        if (!isDeviceModelTypeLabel(model) || seen.has(model)) continue;
+        seen.add(model);
+        result.push(model);
+      }
+    }
+  }
+
+  return result.sort((a, b) => {
+    const rankDiff = getModelTypeSortRank(b) - getModelTypeSortRank(a);
+    return rankDiff || a.localeCompare(b);
+  });
+}
+
 export async function fetchSidebarProductTree(): Promise<{
   data: SidebarProductCategory[];
   error?: string;
@@ -294,6 +354,144 @@ export async function fetchSidebarProductTree(): Promise<{
   }
 
   return { data: buildSidebarTree(rows) };
+}
+
+export interface StockInModelSuggestion {
+  kind: "type" | "product";
+  label: string;
+  modelType: string;
+  productModel?: string;
+}
+
+export async function fetchActiveProductsByModelType(
+  modelType: string,
+  options: { productModel?: string } = {}
+): Promise<{ data: Product[]; error?: string }> {
+  const canonical = canonicalizeModelType(sanitizeSearchTerm(modelType));
+  if (!canonical) {
+    return { data: [] };
+  }
+
+  const productModel = options.productModel?.trim();
+
+  if (isMockMode()) {
+    let list = mockListActiveProductsByModelType(canonical);
+    if (productModel) {
+      list = list.filter((p) => p.model === productModel);
+    }
+    return { data: list };
+  }
+
+  const supabase = await createClient();
+  const pageSize = 1000;
+  const products: Product[] = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    let query = supabase.from("products").select("*");
+    query = applyListFilters(query, { modelType: canonical, hideInactive: true });
+    if (productModel) {
+      query = query.eq("model", productModel);
+    }
+
+    const { data, error } = await query
+      .order("color")
+      .order("model")
+      .range(offset, offset + pageSize - 1);
+
+    if (error) return { data: [], error: error.message };
+
+    products.push(
+      ...(data ?? []).map((row) => normalizeProduct(row as Record<string, unknown>))
+    );
+    if (!data || data.length < pageSize) break;
+  }
+
+  return { data: products };
+}
+
+export async function fetchStockInModelSuggestions(
+  query: string,
+  typeSuggestions: string[],
+  limit = 50
+): Promise<{ data: StockInModelSuggestion[]; error?: string }> {
+  const term = sanitizeSearchTerm(query).toLowerCase();
+  if (!term) {
+    return {
+      data: typeSuggestions.slice(0, limit).map((label) => ({
+        kind: "type" as const,
+        label,
+        modelType: label,
+      })),
+    };
+  }
+
+  const results: StockInModelSuggestion[] = [];
+  const seen = new Set<string>();
+
+  for (const label of typeSuggestions) {
+    if (!label.toLowerCase().includes(term)) continue;
+    const key = `type:${label}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({ kind: "type", label, modelType: label });
+    if (results.length >= limit) return { data: results };
+  }
+
+  if (isMockMode()) {
+    for (const product of mockListActiveProductsByModel(term, limit)) {
+      const key = `product:${product.model}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({
+        kind: "product",
+        label: product.model,
+        modelType:
+          product.model_type ||
+          deriveProductModelType(product.brand, product.model, product.category) ||
+          "",
+        productModel: product.model,
+      });
+      if (results.length >= limit) break;
+    }
+    return { data: results };
+  }
+
+  const supabase = await createClient();
+  const pattern = `%${term.replace(/[%_,]/g, " ")}%`;
+  const { data, error } = await supabase
+    .from("products")
+    .select("brand, model, model_type, category")
+    .eq("is_active", true)
+    .neq("category", "devices")
+    .ilike("model", pattern)
+    .order("model")
+    .limit(limit * 3);
+
+  if (error) return { data: results, error: error.message };
+
+  for (const row of data ?? []) {
+    const model = String(row.model ?? "").trim();
+    if (!model) continue;
+    const key = `product:${model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push({
+      kind: "product",
+      label: model,
+      modelType: canonicalizeModelType(
+        String(row.model_type ?? "") ||
+          deriveProductModelType(
+            String(row.brand ?? ""),
+            model,
+            String(row.category ?? "")
+          )
+      ),
+      productModel: model,
+    });
+    if (results.length >= limit) break;
+  }
+
+  return { data: results };
 }
 
 export async function searchActiveProducts(

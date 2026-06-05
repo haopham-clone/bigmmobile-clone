@@ -1,24 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { toast } from "sonner";
 import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Minus,
-  Plus,
   Search,
   X,
 } from "lucide-react";
 import type { Product, ProductSortOption } from "@/types/database";
 import { formatAUD } from "@/lib/utils";
-import { adjustStock } from "./actions";
 import { AddProductDialog } from "./add-product-dialog";
-import { EditProductDialog } from "./edit-product-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -70,7 +65,7 @@ interface ProductGroup {
   products: Product[];
 }
 
-const SEARCH_DEBOUNCE_MS = 2000;
+const SEARCH_DEBOUNCE_MS = 1000;
 
 function ProductThumbnail({
   product,
@@ -148,9 +143,7 @@ export function ProductClient({
   const [lowStockOnly, setLowStockOnly] = useState(initialFilters.lowStockOnly);
   const [hideZeroStock, setHideZeroStock] = useState(initialFilters.hideZeroStock);
   const [hideInactive, setHideInactive] = useState(initialFilters.hideInactive);
-  const [pendingId, setPendingId] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  const [, startTransition] = useTransition();
 
   useEffect(() => {
     setProducts(initialProducts);
@@ -213,33 +206,6 @@ export function ProductClient({
     (initialFilters.modelTypePrefix
       ? `${initialFilters.modelTypePrefix} series`
       : "");
-
-  function handleAdjust(product: Product, delta: number) {
-    const prevQty = product.quantity;
-    const optimisticQty = Math.max(0, prevQty + delta);
-    if (optimisticQty === prevQty) return;
-
-    setProducts((prev) =>
-      prev.map((p) => (p.id === product.id ? { ...p, quantity: optimisticQty } : p))
-    );
-    setPendingId(product.id);
-
-    startTransition(async () => {
-      const result = await adjustStock(product.id, delta);
-      setPendingId(null);
-      if (result.error) {
-        setProducts((prev) =>
-          prev.map((p) => (p.id === product.id ? { ...p, quantity: prevQty } : p))
-        );
-        toast.error(result.error);
-        return;
-      }
-      toast.success(
-        delta > 0 ? `Stock increased: ${product.sku}` : `Stock decreased: ${product.sku}`
-      );
-      router.refresh();
-    });
-  }
 
   const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const showingTo = Math.min(page * pageSize, total);
@@ -413,13 +379,12 @@ export function ProductClient({
               <TableHead className="text-right">Cost</TableHead>
               <TableHead className="text-right">Sell</TableHead>
               <TableHead className="text-center">Qty</TableHead>
-              <TableHead className="text-center w-36">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {products.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={13} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="h-24 text-center text-muted-foreground">
                   No matching products
                 </TableCell>
               </TableRow>
@@ -483,9 +448,6 @@ export function ProductClient({
                     <TableCell className="text-center">
                       <span className="font-semibold">{totalQty}</span>
                     </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground">
-                      Expand to edit
-                    </TableCell>
                   </TableRow>
                 );
 
@@ -495,7 +457,6 @@ export function ProductClient({
 
                 const variantRows = group.products.map((product) => {
                   const isLowStock = product.quantity > 0 && product.quantity < 3;
-                  const isPending = pendingId === product.id;
                   const detailHref = `/dashboard/products/item/${product.id}`;
 
                   return (
@@ -543,39 +504,6 @@ export function ProductClient({
                               Low
                             </Badge>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div
-                          className="flex items-center justify-center gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <EditProductDialog product={product} variant="icon" />
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-7 w-7"
-                            disabled={isPending || product.quantity === 0}
-                            onClick={() => handleAdjust(product, -1)}
-                            aria-label="Decrease stock"
-                          >
-                            <Minus className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-7 w-7"
-                            disabled={isPending}
-                            onClick={() => handleAdjust(product, 1)}
-                            aria-label="Increase stock"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                            <Link href={detailHref} aria-label="View product details">
-                              <ChevronRight className="h-4 w-4" />
-                            </Link>
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>

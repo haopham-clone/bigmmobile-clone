@@ -5,11 +5,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Minus, Plus } from "lucide-react";
+import { ArrowLeft, PackagePlus } from "lucide-react";
 import type { Product } from "@/types/database";
 import { getCategoryLabel, isHiddenCategory } from "@/lib/categories";
 import { formatAUD } from "@/lib/utils";
-import { adjustStock, toggleProductActive } from "../../actions";
+import { toggleProductActive } from "../../actions";
 import { EditProductDialog } from "../../edit-product-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,25 +59,6 @@ export function ProductDetailClient({ product: initialProduct }: ProductDetailCl
     });
   }
 
-  function handleAdjust(delta: number) {
-    const prevQty = product.quantity;
-    const optimisticQty = Math.max(0, prevQty + delta);
-    if (optimisticQty === prevQty) return;
-
-    setProduct((p) => ({ ...p, quantity: optimisticQty }));
-
-    startTransition(async () => {
-      const result = await adjustStock(product.id, delta);
-      if (result.error) {
-        setProduct((p) => ({ ...p, quantity: prevQty }));
-        toast.error(result.error);
-        return;
-      }
-      toast.success(delta > 0 ? "Stock increased" : "Stock decreased");
-      router.refresh();
-    });
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -96,6 +77,12 @@ export function ProductDetailClient({ product: initialProduct }: ProductDetailCl
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="default" className="gap-2" asChild>
+            <Link href="/dashboard/stock-in">
+              <PackagePlus className="h-4 w-4" />
+              Receive stock
+            </Link>
+          </Button>
           <EditProductDialog product={product} />
           <Button
             variant={product.is_active ? "outline" : "secondary"}
@@ -161,33 +148,16 @@ export function ProductDetailClient({ product: initialProduct }: ProductDetailCl
               <DetailRow
                 label="In stock"
                 value={
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8"
-                      disabled={isPending || product.quantity === 0}
-                      onClick={() => handleAdjust(-1)}
-                      aria-label="Decrease stock"
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <span className="min-w-8 text-center text-lg font-semibold">
-                      {product.quantity}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8"
-                      disabled={isPending}
-                      onClick={() => handleAdjust(1)}
-                      aria-label="Increase stock"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <span className="text-lg font-semibold">{product.quantity}</span>
                 }
               />
+              <p className="text-xs text-muted-foreground sm:text-right">
+                Quantity changes are recorded via{" "}
+                <Link href="/dashboard/stock-in" className="underline hover:text-foreground">
+                  Stock in
+                </Link>
+                .
+              </p>
               <DetailRow
                 label="Status"
                 value={product.is_active ? "Active" : "Inactive"}

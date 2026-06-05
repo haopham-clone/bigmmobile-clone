@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   PackagePlus,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_CATEGORIES } from "@/lib/categories";
@@ -106,6 +107,7 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
   const isDashboardActive = pathname === "/dashboard";
   const isStockInActive = pathname === "/dashboard/stock-in";
   const isStockInHistoryActive = pathname.startsWith("/dashboard/stock-in/history");
+  const isRepairsActive = pathname.startsWith("/dashboard/repairs");
   const activeBrand = searchParams.get("brand") ?? "";
   const activeType = searchParams.get("type") ?? "";
   const activeTypePrefix = searchParams.get("typePrefix") ?? "";
@@ -143,6 +145,16 @@ export function DashboardSidebarNav({ productTree }: DashboardSidebarNavProps) {
         >
           <History className="h-4 w-4" />
           Receipt History
+        </Link>
+        <Link
+          href="/dashboard/repairs"
+          className={cn(
+            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            isRepairsActive && "bg-sidebar-accent text-sidebar-accent-foreground"
+          )}
+        >
+          <Wrench className="h-4 w-4" />
+          Repair list
         </Link>
       </nav>
 

@@ -3,6 +3,8 @@ import type {
   ProductInsert,
   ProductListFilters,
   ProductSortOption,
+  RepairJob,
+  RepairJobInput,
   StockAction,
   StockLog,
   StockReceipt,
@@ -142,6 +144,7 @@ interface MockStore {
   stockLogs: StockLog[];
   receipts: StockReceipt[];
   receiptItems: StockReceiptItem[];
+  repairJobs: RepairJob[];
 }
 
 function createStore(): MockStore {
@@ -150,6 +153,7 @@ function createStore(): MockStore {
     stockLogs: [],
     receipts: [],
     receiptItems: [],
+    repairJobs: [],
   };
 }
 
@@ -158,6 +162,9 @@ const globalForMock = globalThis as unknown as { __mockStore?: MockStore };
 function getStore(): MockStore {
   if (!globalForMock.__mockStore) {
     globalForMock.__mockStore = createStore();
+  }
+  if (!globalForMock.__mockStore.repairJobs) {
+    globalForMock.__mockStore.repairJobs = [];
   }
   return globalForMock.__mockStore;
 }
@@ -623,6 +630,108 @@ export function mockSetProductActive(
 
   product.is_active = isActive;
   product.updated_at = now();
+  return {};
+}
+
+interface MockListRepairJobsOptions {
+  q?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
+function repairJobMatchesSearch(job: RepairJob, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  const phoneNeedle = needle.replace(/\s+/g, "");
+  const name = job.customer_name.toLowerCase();
+  const phone = (job.phone_number ?? "").toLowerCase().replace(/\s+/g, "");
+  return name.includes(needle) || phone.includes(phoneNeedle);
+}
+
+function repairJobMatchesDateRange(
+  job: RepairJob,
+  fromDate?: string,
+  toDate?: string
+): boolean {
+  const time = new Date(job.repair_date).getTime();
+  if (fromDate && time < new Date(fromDate).getTime()) return false;
+  if (toDate && time > new Date(toDate).getTime()) return false;
+  return true;
+}
+
+export function mockListRepairJobs(options: MockListRepairJobsOptions = {}): RepairJob[] {
+  const jobs = getStore().repairJobs.filter(
+    (job) =>
+      repairJobMatchesSearch(job, options.q ?? "") &&
+      repairJobMatchesDateRange(job, options.fromDate, options.toDate)
+  );
+  return jobs.sort(
+    (a, b) => new Date(b.repair_date).getTime() - new Date(a.repair_date).getTime()
+  );
+}
+
+export function mockBulkCreateRepairJobs(
+  userId: string,
+  userEmail: string,
+  inputs: RepairJobInput[]
+): { imported: number; error?: string } {
+  for (const input of inputs) {
+    mockCreateRepairJob(userId, userEmail, input);
+  }
+  return { imported: inputs.length };
+}
+
+export function mockGetRepairJob(jobId: string): RepairJob | null {
+  return getStore().repairJobs.find((job) => job.id === jobId) ?? null;
+}
+
+export function mockCreateRepairJob(
+  userId: string,
+  userEmail: string,
+  input: RepairJobInput
+): { data?: RepairJob; error?: string } {
+  const store = getStore();
+  const timestamp = now();
+  const job: RepairJob = {
+    id: id(),
+    user_id: userId,
+    recorded_by_email: userEmail || null,
+    customer_name: input.customer_name,
+    phone_number: input.phone_number || null,
+    device_model: input.device_model,
+    issue: input.issue,
+    parts_used: input.parts_used,
+    repair_date: input.repair_date,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  store.repairJobs.unshift(job);
+  return { data: job };
+}
+
+export function mockUpdateRepairJob(
+  jobId: string,
+  input: RepairJobInput
+): { data?: RepairJob; error?: string } {
+  const store = getStore();
+  const job = store.repairJobs.find((item) => item.id === jobId);
+  if (!job) return { error: "Repair job not found" };
+
+  job.customer_name = input.customer_name;
+  job.phone_number = input.phone_number || null;
+  job.device_model = input.device_model;
+  job.issue = input.issue;
+  job.parts_used = input.parts_used;
+  job.repair_date = input.repair_date;
+  job.updated_at = now();
+  return { data: job };
+}
+
+export function mockDeleteRepairJob(jobId: string): { error?: string } {
+  const store = getStore();
+  const index = store.repairJobs.findIndex((item) => item.id === jobId);
+  if (index === -1) return { error: "Repair job not found" };
+  store.repairJobs.splice(index, 1);
   return {};
 }
 

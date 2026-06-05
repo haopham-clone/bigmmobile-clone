@@ -146,3 +146,26 @@ export interface StockReceiptInput {
   note?: string | null;
   lines: StockReceiptLineInput[];
 }
+
+export interface RepairJob {
+  id: string;
+  user_id: string;
+  recorded_by_email: string | null;
+  customer_name: string;
+  phone_number: string | null;
+  device_model: string;
+  issue: string;
+  parts_used: string;
+  repair_date: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepairJobInput {
+  customer_name: string;
+  phone_number?: string;
+  device_model: string;
+  issue: string;
+  parts_used: string;
+  repair_date: string;
+}

@@ -5,7 +5,8 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
 import { deriveProductModelType } from "@/lib/model-type";
-import { insertProduct, setProductActive, updateProduct as updateProductRecord, updateStock } from "@/lib/data";
+import { uploadProductImageFile } from "@/lib/product-image-upload";
+import { insertProduct, setProductActive, updateProduct as updateProductRecord, updateProductImageUrl, updateStock } from "@/lib/data";
 
 const categoryValues = PRODUCT_CATEGORIES_SELECT.map((c) => c.slug) as [string, ...string[]];
 
@@ -150,6 +151,61 @@ export async function toggleProductActive(productId: string, isActive: boolean) 
   if (result.error) return { error: result.error };
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/products", "layout");
+  revalidatePath(`/dashboard/products/item/${productId}`);
+  return { success: true };
+}
+
+const imageUrlSchema = z
+  .string()
+  .nullable()
+  .refine(
+    (v) =>
+      v == null ||
+      v === "" ||
+      /^https?:\/\/.+/.test(v) ||
+      /^data:image\//.test(v),
+    "Invalid image URL"
+  );
+
+export async function uploadProductImageAction(productId: string, formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) return { error: "Unauthorized" };
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { error: "Choose an image file to upload" };
+  }
+
+  const uploaded = await uploadProductImageFile(productId, file);
+  if (uploaded.error || !uploaded.url) {
+    return { error: uploaded.error ?? "Upload failed" };
+  }
+
+  const result = await updateProductImageUrl(productId, uploaded.url);
+  if (result.error) return { error: result.error };
+
+  revalidatePath("/dashboard/products", "layout");
+  revalidatePath(`/dashboard/products/item/${productId}`);
+  return { success: true, url: uploaded.url };
+}
+
+export async function updateProductImageAction(
+  productId: string,
+  imageUrl: string | null
+) {
+  const user = await getSessionUser();
+  if (!user) return { error: "Unauthorized" };
+
+  const parsed = imageUrlSchema.safeParse(imageUrl);
+  if (!parsed.success) {
+    return { error: parsed.error.errors[0]?.message ?? "Invalid image URL" };
+  }
+
+  const normalized = parsed.data?.trim() ? parsed.data.trim() : null;
+  const result = await updateProductImageUrl(productId, normalized);
+  if (result.error) return { error: result.error };
+
   revalidatePath("/dashboard/products", "layout");
   revalidatePath(`/dashboard/products/item/${productId}`);
   return { success: true };

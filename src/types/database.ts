@@ -156,6 +156,7 @@ export interface RepairJob {
   device_model: string;
   issue: string;
   parts_used: string;
+  price: number | null;
   repair_date: string;
   created_at: string;
   updated_at: string;
@@ -167,5 +168,6 @@ export interface RepairJobInput {
   device_model: string;
   issue: string;
   parts_used: string;
+  price?: number | null;
   repair_date: string;
 }

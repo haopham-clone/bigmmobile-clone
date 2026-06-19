@@ -10,6 +10,8 @@ import type { Product } from "@/types/database";
 import { getCategoryLabel, isHiddenCategory } from "@/lib/categories";
 import { formatAUD } from "@/lib/utils";
 import { toggleProductActive } from "../../actions";
+import { queuePendingCartAdd } from "@/lib/stock-cart-storage";
+import { ProductImageEditor } from "@/components/products/product-image-editor";
 import { EditProductDialog } from "../../edit-product-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,38 +61,49 @@ export function ProductDetailClient({ product: initialProduct }: ProductDetailCl
     });
   }
 
+  function handleAddToReceivingCart() {
+    queuePendingCartAdd({
+      product_id: product.id,
+      quantity_received: 1,
+    });
+    toast.success("Added to receiving cart");
+    router.push("/dashboard/stock-in");
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-2">
-          <Button variant="ghost" size="sm" className="-ml-2 gap-2" asChild>
-            <Link href={backHref}>
-              <ArrowLeft className="h-4 w-4" />
-              Back to {getCategoryLabel(isHiddenCategory(product.category) ? "all" : (product.category as never))}
-            </Link>
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {product.brand} {product.model}
-            </h1>
-            <p className="font-mono text-sm text-muted-foreground">{product.sku}</p>
-          </div>
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="-ml-2 gap-2" asChild>
+          <Link href={backHref}>
+            <ArrowLeft className="h-4 w-4" />
+            Back to {getCategoryLabel(isHiddenCategory(product.category) ? "all" : (product.category as never))}
+          </Link>
+        </Button>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight break-words">
+            {product.brand} {product.model}
+          </h1>
+          <p className="font-mono text-sm text-muted-foreground">{product.sku}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="default" className="gap-2" asChild>
-            <Link href="/dashboard/stock-in">
-              <PackagePlus className="h-4 w-4" />
-              Receive stock
-            </Link>
+        <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <Button type="button" variant="default" className="gap-2 sm:w-auto" onClick={handleAddToReceivingCart}>
+            <PackagePlus className="h-4 w-4" />
+            Add to receiving cart
           </Button>
-          <EditProductDialog product={product} />
-          <Button
-            variant={product.is_active ? "outline" : "secondary"}
-            disabled={isPending}
-            onClick={handleToggleActive}
-          >
-            {product.is_active ? "Deactivate" : "Activate"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" asChild>
+              <Link href="/dashboard/stock-in">Stock in</Link>
+            </Button>
+            <EditProductDialog product={product} />
+            <Button
+              variant="outline"
+              className={product.is_active ? "text-destructive hover:text-destructive" : undefined}
+              disabled={isPending}
+              onClick={handleToggleActive}
+            >
+              {product.is_active ? "Deactivate" : "Activate"}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -114,6 +127,13 @@ export function ProductDetailClient({ product: initialProduct }: ProductDetailCl
                 No image
               </div>
             )}
+            <ProductImageEditor
+              product={product}
+              onUpdated={(imageUrl) => {
+                setProduct((prev) => ({ ...prev, image_url: imageUrl }));
+                router.refresh();
+              }}
+            />
           </CardContent>
         </Card>
 

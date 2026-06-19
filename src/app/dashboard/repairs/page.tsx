@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { fetchRepairJobs } from "@/lib/repairs";
+import { formatAUD } from "@/lib/utils";
 import { RepairsImportExport } from "@/components/repairs/repairs-import-export";
 import { RepairsListClient } from "./repairs-list-client";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ export default async function RepairsPage({ searchParams }: RepairsPageProps) {
               <TableHead>Model</TableHead>
               <TableHead>Issue</TableHead>
               <TableHead>Parts used</TableHead>
+              <TableHead className="text-right">Price</TableHead>
               <TableHead>Recorded by</TableHead>
               <TableHead className="w-24" />
             </TableRow>
@@ -66,7 +68,7 @@ export default async function RepairsPage({ searchParams }: RepairsPageProps) {
           <TableBody>
             {jobs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                   {q ? "No repairs match your search" : "No repairs yet"}
                 </TableCell>
               </TableRow>
@@ -84,6 +86,9 @@ export default async function RepairsPage({ searchParams }: RepairsPageProps) {
                   </TableCell>
                   <TableCell className="max-w-xs truncate" title={job.parts_used}>
                     {truncate(job.parts_used)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {job.price != null ? formatAUD(Number(job.price)) : "—"}
                   </TableCell>
                   <TableCell>{job.recorded_by_email ?? "—"}</TableCell>
                   <TableCell>

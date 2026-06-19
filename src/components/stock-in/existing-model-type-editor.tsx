@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 export interface ExistingProductVariantRow {
   key: string;
   product_id: string;
+  brand: string;
   color: string;
   model: string;
   sku: string;
@@ -77,6 +78,7 @@ export function ExistingModelTypeStockEditor({
         data.map((p) => ({
           key: p.id,
           product_id: p.id,
+          brand: p.brand,
           color: p.color?.trim() || "—",
           model: p.model,
           sku: p.sku,

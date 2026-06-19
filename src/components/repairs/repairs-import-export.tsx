@@ -111,7 +111,7 @@ export function RepairsImportExport() {
             <p className="text-sm font-medium">Import spreadsheet</p>
             <p className="text-sm text-muted-foreground">
               Upload .csv, .xlsx, or .xls with columns: Date, Name, Phone Number,
-              Models, Issue, Repairs
+              Models, Issue, Repairs, Price
             </p>
           </div>
           <div className="space-y-2">

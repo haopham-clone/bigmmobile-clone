@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, ShoppingCart, Trash2 } from "lucide-react";
 import type { CategorySlug } from "@/lib/categories";
 import { PRODUCT_CATEGORIES_SELECT } from "@/lib/categories";
 import { deriveProductModelType } from "@/lib/model-type";
@@ -11,7 +11,24 @@ import {
   generateStockReceiptInvoiceNumber,
   isValidStockReceiptInvoiceNumber,
 } from "@/lib/stock-receipt-invoice";
-import { submitStockReceiptAction } from "./actions";
+import {
+  cartTotalQuantity,
+  flattenCartToReceiptLines,
+  mergeCartItem,
+  removeCartItem,
+  updateCartItemQuantity,
+  validateCartItems,
+  type StockCartDraft,
+  type StockCartItem,
+  type StockCartItemInput,
+} from "@/lib/stock-cart";
+import {
+  clearCartDraft,
+  consumePendingCartAdd,
+  loadOrCreateCartDraft,
+  saveCartDraft,
+} from "@/lib/stock-cart-storage";
+import { submitStockReceiptAction, getProductForStockIn } from "./actions";
 import type { StockReceiptLineInput } from "@/types/database";
 import {
   ColorVariantsEditor,
@@ -24,6 +41,8 @@ import {
 } from "@/components/stock-in/existing-model-type-editor";
 import { DeviceModelTypeField } from "@/components/stock-in/device-model-type-field";
 import { SelectWithOtherField } from "@/components/stock-in/select-with-other-field";
+import { StockCartPanel } from "@/components/stock-in/stock-cart-panel";
+import { ProductSearchSelect } from "@/components/product-search-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,11 +93,38 @@ function newLine(mode: LineMode = "existing"): LineRow {
   };
 }
 
-function lineTotalQuantity(line: LineRow): number {
+function lineRowToCartItems(line: LineRow): StockCartItemInput[] {
   if (line.mode === "existing") {
-    return line.existing_variants.reduce((sum, v) => sum + (v.quantity_received || 0), 0);
+    return line.existing_variants
+      .filter((variant) => variant.quantity_received > 0)
+      .map((variant) => ({
+        mode: "existing" as const,
+        product_id: variant.product_id,
+        sku: variant.sku,
+        brand: variant.brand,
+        model: variant.model,
+        color: variant.color,
+        quantity_received: variant.quantity_received,
+      }));
   }
-  return line.color_variants.reduce((sum, v) => sum + (v.quantity_received || 0), 0);
+
+  return line.color_variants
+    .filter((variant) => variant.quantity_received > 0 && variant.color.trim())
+    .map((variant) => ({
+      mode: "new" as const,
+      brand: line.brand.trim(),
+      model_type: line.model_type.trim() || undefined,
+      model: line.model.trim(),
+      sku: variant.sku.trim(),
+      category: line.category,
+      cost_price: line.cost_price,
+      selling_price: line.selling_price,
+      storage_ram: line.storage_ram.trim() || undefined,
+      condition: line.condition.trim() || undefined,
+      color: variant.color.trim(),
+      quantity_received: variant.quantity_received,
+      base_sku: line.sku.trim() || undefined,
+    }));
 }
 
 interface StockInClientProps {
@@ -93,69 +139,144 @@ export function StockInClient({
   brandSuggestions = [],
 }: StockInClientProps) {
   const router = useRouter();
+  const [hydrated, setHydrated] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState(generateStockReceiptInvoiceNumber);
   const [note, setNote] = useState("");
+  const [cartItems, setCartItems] = useState<StockCartItem[]>([]);
   const [lines, setLines] = useState<LineRow[]>([newLine()]);
+  const [quickSearchProductId, setQuickSearchProductId] = useState("");
+  const [quickAddQty, setQuickAddQty] = useState(1);
   const [isPending, startTransition] = useTransition();
 
-  const totalQty = lines.reduce((sum, l) => sum + lineTotalQuantity(l), 0);
+  const persistDraft = useCallback(
+    (items: StockCartItem[], invoice: string, draftNote: string) => {
+      if (!hydrated) return;
+      const draft: StockCartDraft = {
+        version: 1,
+        invoiceNumber: invoice,
+        note: draftNote,
+        items,
+      };
+      saveCartDraft(draft);
+    },
+    [hydrated]
+  );
+
+  useEffect(() => {
+    const draft = loadOrCreateCartDraft(generateStockReceiptInvoiceNumber());
+    setInvoiceNumber(draft.invoiceNumber || generateStockReceiptInvoiceNumber());
+    setNote(draft.note);
+    setCartItems(draft.items);
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    persistDraft(cartItems, invoiceNumber, note);
+  }, [cartItems, invoiceNumber, note, hydrated, persistDraft]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    async function consumePendingAdd() {
+      const pending = consumePendingCartAdd();
+      if (!pending) return;
+
+      const product = await getProductForStockIn(pending.product_id);
+      if (!product) {
+        toast.error("Could not load product for cart");
+        return;
+      }
+
+      setCartItems((prev) =>
+        mergeCartItem(prev, {
+          mode: "existing",
+          product_id: product.id,
+          sku: product.sku,
+          brand: product.brand,
+          model: product.model,
+          color: product.color?.trim() || "—",
+          quantity_received: pending.quantity_received,
+        })
+      );
+      toast.success("Added to receiving cart");
+    }
+
+    void consumePendingAdd();
+  }, [hydrated]);
+
+  const totalQty = cartTotalQuantity(cartItems);
 
   function updateLine(key: string, patch: Partial<LineRow>) {
-    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+    setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }
 
   function removeLine(key: string) {
-    setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.key !== key)));
+    setLines((prev) => (prev.length <= 1 ? prev : prev.filter((line) => line.key !== key)));
   }
 
   function handleModelBlur(lineKey: string) {
     setLines((prev) =>
-      prev.map((l) => {
-        if (l.key !== lineKey || l.model_type.trim()) return l;
-        const derived = deriveProductModelType(l.brand, l.model, l.category);
-        return derived ? { ...l, model_type: derived } : l;
+      prev.map((line) => {
+        if (line.key !== lineKey || line.model_type.trim()) return line;
+        const derived = deriveProductModelType(line.brand, line.model, line.category);
+        return derived ? { ...line, model_type: derived } : line;
       })
     );
   }
 
-  function handleSubmit() {
-    const receiptLines: StockReceiptLineInput[] = [];
+  function addLineToCart(line: LineRow) {
+    const incoming = lineRowToCartItems(line);
+    if (incoming.length === 0) {
+      toast.error("Set quantity received before adding to cart");
+      return;
+    }
+    setCartItems((prev) => incoming.reduce((items, item) => mergeCartItem(items, item), prev));
+    toast.success(`Added ${incoming.length} item(s) to cart`);
+  }
 
-    for (const line of lines) {
-      if (line.mode === "existing") {
-        for (const variant of line.existing_variants) {
-          if (variant.quantity_received > 0) {
-            receiptLines.push({
-              mode: "existing",
-              product_id: variant.product_id,
-              quantity_received: variant.quantity_received,
-            });
-          }
-        }
-        continue;
-      }
-
-      receiptLines.push({
-        mode: "new",
-        brand: line.brand.trim(),
-        model_type: line.model_type.trim() || undefined,
-        model: line.model.trim(),
-        base_sku: line.sku.trim() || undefined,
-        category: line.category,
-        cost_price: line.cost_price,
-        selling_price: line.selling_price,
-        storage_ram: line.storage_ram.trim() || undefined,
-        condition: line.condition.trim() || undefined,
-        color_variants: line.color_variants.map((v) => ({
-          color: v.color.trim(),
-          quantity_received: v.quantity_received,
-          sku: v.sku.trim() || undefined,
-        })),
-      });
+  async function handleQuickAddToCart() {
+    if (!quickSearchProductId) {
+      toast.error("Search and select a product first");
+      return;
+    }
+    if (quickAddQty < 1) {
+      toast.error("Quantity must be at least 1");
+      return;
     }
 
+    const product = await getProductForStockIn(quickSearchProductId);
+    if (!product) {
+      toast.error("Product not found");
+      return;
+    }
+
+    setCartItems((prev) =>
+      mergeCartItem(prev, {
+        mode: "existing",
+        product_id: product.id,
+        sku: product.sku,
+        brand: product.brand,
+        model: product.model,
+        color: product.color?.trim() || "—",
+        quantity_received: quickAddQty,
+      })
+    );
+    setQuickSearchProductId("");
+    setQuickAddQty(1);
+    toast.success("Added to receiving cart");
+  }
+
+  function handleSubmit() {
+    const cartError = validateCartItems(cartItems);
+    if (cartError) {
+      toast.error(cartError);
+      return;
+    }
+
+    const receiptLines: StockReceiptLineInput[] = flattenCartToReceiptLines(cartItems);
     if (receiptLines.length === 0) {
-      toast.error("Add at least one line with quantity received");
+      toast.error("Add at least one item to the cart");
       return;
     }
 
@@ -178,6 +299,10 @@ export function StockInClient({
         return;
       }
       toast.success("Stock received successfully");
+      clearCartDraft();
+      setCartItems([]);
+      setNote("");
+      setInvoiceNumber(generateStockReceiptInvoiceNumber());
       if (result.receiptId) {
         router.push(`/dashboard/stock-in/history/${result.receiptId}`);
       } else {
@@ -233,9 +358,49 @@ export function StockInClient({
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Quick add to cart</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="min-w-0 flex-1 space-y-2">
+            <Label>Search product</Label>
+            <ProductSearchSelect
+              value={quickSearchProductId}
+              onChange={setQuickSearchProductId}
+              placeholder="Search brand, model, SKU..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="quick_qty">Qty</Label>
+            <Input
+              id="quick_qty"
+              type="number"
+              min={1}
+              className="w-24"
+              value={quickAddQty}
+              onChange={(e) => setQuickAddQty(Math.max(1, Number(e.target.value) || 1))}
+            />
+          </div>
+          <Button type="button" className="gap-2" onClick={() => void handleQuickAddToCart()}>
+            <ShoppingCart className="h-4 w-4" />
+            Add to cart
+          </Button>
+        </CardContent>
+      </Card>
+
+      <StockCartPanel
+        items={cartItems}
+        onQuantityChange={(cartId, quantity) =>
+          setCartItems((prev) => updateCartItemQuantity(prev, cartId, quantity))
+        }
+        onRemove={(cartId) => setCartItems((prev) => removeCartItem(prev, cartId))}
+        onClear={() => setCartItems([])}
+      />
+
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Line items</h2>
+          <h2 className="text-lg font-semibold">Line builders</h2>
           <div className="flex gap-2">
             <Button
               type="button"
@@ -282,6 +447,16 @@ export function StockInClient({
                     <SelectItem value="new">New product</SelectItem>
                   </SelectContent>
                 </Select>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => addLineToCart(line)}
+                >
+                  <ShoppingCart className="h-4 w-4" />
+                  Add to cart
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
@@ -417,9 +592,9 @@ export function StockInClient({
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          {lines.length} line{lines.length !== 1 ? "s" : ""} · {totalQty} units total
+          Cart: {cartItems.length} item{cartItems.length !== 1 ? "s" : ""} · {totalQty} units total
         </p>
-        <Button size="lg" disabled={isPending} onClick={handleSubmit}>
+        <Button size="lg" disabled={isPending || cartItems.length === 0} onClick={handleSubmit}>
           {isPending ? "Saving..." : "Submit receipt"}
         </Button>
       </div>

@@ -27,7 +27,13 @@ enabled = true
 port = 54324
 
 [storage]
-enabled = false
+enabled = true
+file_size_limit = "5MiB"
+
+[storage.buckets.product-images]
+public = true
+file_size_limit = "5MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
 
 [auth]
 enabled = true

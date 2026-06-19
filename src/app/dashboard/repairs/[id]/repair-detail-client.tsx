@@ -7,6 +7,7 @@ import { Pencil, Trash2 } from "lucide-react";
 import type { RepairJob } from "@/types/database";
 import { deleteRepairJobAction } from "@/app/dashboard/repairs/actions";
 import { RepairJobForm } from "@/components/repairs/repair-job-form";
+import { formatAUD } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -96,6 +97,12 @@ export function RepairDetailClient({ job }: RepairDetailClientProps) {
             <p className="text-sm text-muted-foreground">Repair date</p>
             <p className="font-medium">
               {new Date(job.repair_date).toLocaleString("en-AU")}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground">Price</p>
+            <p className="font-medium">
+              {job.price != null ? formatAUD(Number(job.price)) : "—"}
             </p>
           </div>
           <div>

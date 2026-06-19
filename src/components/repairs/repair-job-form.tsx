@@ -43,17 +43,22 @@ export function RepairJobForm({
   const [deviceModel, setDeviceModel] = useState(job?.device_model ?? "");
   const [issue, setIssue] = useState(job?.issue ?? "");
   const [partsUsed, setPartsUsed] = useState(job?.parts_used ?? "");
+  const [price, setPrice] = useState(
+    job?.price != null ? String(job.price) : ""
+  );
   const [repairDate, setRepairDate] = useState(
     job ? toDatetimeLocalValue(job.repair_date) : defaultRepairDate()
   );
 
   function buildPayload(): RepairJobInput {
+    const trimmedPrice = price.trim();
     return {
       customer_name: customerName,
       phone_number: phoneNumber.trim() || undefined,
       device_model: deviceModel,
       issue,
       parts_used: partsUsed,
+      price: trimmedPrice === "" ? null : Number(trimmedPrice),
       repair_date: new Date(repairDate).toISOString(),
     };
   }
@@ -160,6 +165,19 @@ export function RepairJobForm({
           placeholder="e.g. New LCD Screen and protector"
           rows={3}
           required
+        />
+      </div>
+
+      <div className="space-y-2 sm:max-w-xs">
+        <Label htmlFor="price">Price (AUD)</Label>
+        <Input
+          id="price"
+          type="number"
+          min="0"
+          step="0.01"
+          value={price}
+          onChange={(event) => setPrice(event.target.value)}
+          placeholder="Optional"
         />
       </div>
 

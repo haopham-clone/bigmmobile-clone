@@ -633,6 +633,19 @@ export function mockSetProductActive(
   return {};
 }
 
+export function mockUpdateProductImageUrl(
+  productId: string,
+  imageUrl: string | null
+): { error?: string; success?: boolean } {
+  const store = getStore();
+  const product = store.products.find((p) => p.id === productId);
+  if (!product) return { error: "Product not found" };
+
+  product.image_url = imageUrl;
+  product.updated_at = now();
+  return { success: true };
+}
+
 interface MockListRepairJobsOptions {
   q?: string;
   fromDate?: string;
@@ -701,6 +714,7 @@ export function mockCreateRepairJob(
     device_model: input.device_model,
     issue: input.issue,
     parts_used: input.parts_used,
+    price: input.price ?? null,
     repair_date: input.repair_date,
     created_at: timestamp,
     updated_at: timestamp,
@@ -722,6 +736,7 @@ export function mockUpdateRepairJob(
   job.device_model = input.device_model;
   job.issue = input.issue;
   job.parts_used = input.parts_used;
+  job.price = input.price ?? null;
   job.repair_date = input.repair_date;
   job.updated_at = now();
   return { data: job };

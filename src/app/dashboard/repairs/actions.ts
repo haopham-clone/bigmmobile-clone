@@ -18,6 +18,9 @@ const repairJobSchema = z.object({
   device_model: z.string().trim().min(1, "Device model is required"),
   issue: z.string().trim().min(1, "Issue description is required"),
   parts_used: z.string().trim().min(1, "Parts used is required"),
+  price: z
+    .union([z.number().min(0, "Price must be 0 or greater"), z.null()])
+    .optional(),
   repair_date: z
     .string()
     .min(1, "Repair date is required")
@@ -36,6 +39,7 @@ function parseRepairInput(payload: RepairJobInput) {
     data: {
       ...parsed.data,
       phone_number: parsed.data.phone_number || undefined,
+      price: parsed.data.price ?? null,
       repair_date: new Date(parsed.data.repair_date).toISOString(),
     } satisfies RepairJobInput,
   };

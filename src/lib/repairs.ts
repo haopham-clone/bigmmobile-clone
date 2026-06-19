@@ -96,6 +96,7 @@ export async function createRepairJob(
       device_model: input.device_model,
       issue: input.issue,
       parts_used: input.parts_used,
+      price: input.price ?? null,
       repair_date: input.repair_date,
     })
     .select("*")
@@ -122,6 +123,7 @@ export async function updateRepairJob(
       device_model: input.device_model,
       issue: input.issue,
       parts_used: input.parts_used,
+      price: input.price ?? null,
       repair_date: input.repair_date,
     })
     .eq("id", id)
@@ -165,6 +167,7 @@ export async function bulkCreateRepairJobs(
     device_model: input.device_model,
     issue: input.issue,
     parts_used: input.parts_used,
+    price: input.price ?? null,
     repair_date: input.repair_date,
   }));
 

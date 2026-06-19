@@ -13,6 +13,7 @@ import {
   mockListProducts,
   mockSetProductActive,
   mockUpdateProduct,
+  mockUpdateProductImageUrl,
 } from "@/lib/mock-db";
 import { createClient } from "@/utils/supabase/server";
 import type { CategoryCounts, Product, ProductInsert, ProductUpdate, StockAction } from "@/types/database";
@@ -315,6 +316,29 @@ export async function setProductActive(
   const { error } = await supabase
     .from("products")
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
+    .eq("id", productId);
+
+  if (error) return { error: error.message };
+  return { success: true };
+}
+
+export async function updateProductImageUrl(
+  productId: string,
+  imageUrl: string | null
+): Promise<{ error?: string; success?: boolean }> {
+  if (isMockMode()) {
+    return mockUpdateProductImageUrl(productId, imageUrl);
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Unauthorized" };
+
+  const { error } = await supabase
+    .from("products")
+    .update({ image_url: imageUrl, updated_at: new Date().toISOString() })
     .eq("id", productId);
 
   if (error) return { error: error.message };

@@ -21,6 +21,11 @@ const HEADER_ALIASES: Record<string, keyof RepairJobInput> = {
   repair: "parts_used",
   "parts used": "parts_used",
   parts: "parts_used",
+  price: "price",
+  cost: "price",
+  amount: "price",
+  charge: "price",
+  fee: "price",
 };
 
 export interface ParsedRepairImportRow {
@@ -40,6 +45,7 @@ export interface RepairExportRow {
   Models: string;
   Issue: string;
   Repairs: string;
+  Price: number | "";
   "Recorded by": string;
 }
 
@@ -92,18 +98,34 @@ function isRowEmpty(values: Record<string, unknown>): boolean {
   return Object.values(values).every((value) => cellText(value) === "");
 }
 
+function parsePrice(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value >= 0 ? value : null;
+  }
+  const text = cellText(value).replace(/[$,\s]/g, "");
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function mapRowToInput(
   row: Record<string, unknown>,
   rowNumber: number
 ): { input?: RepairJobInput; error?: string } {
   const mapped: Partial<Record<keyof RepairJobInput, string>> = {};
   let repairDate: string | null = null;
+  let price: number | null = null;
 
   for (const [header, value] of Object.entries(row)) {
     const field = HEADER_ALIASES[normalizeHeader(header)];
     if (!field) continue;
     if (field === "repair_date") {
       repairDate = parseRepairDate(value);
+      continue;
+    }
+    if (field === "price") {
+      price = parsePrice(value);
       continue;
     }
     mapped[field] = cellText(value);
@@ -138,6 +160,7 @@ function mapRowToInput(
       device_model: deviceModel,
       issue,
       parts_used: partsUsed,
+      price,
       repair_date: repairDate ?? new Date().toISOString(),
     },
   };
@@ -188,6 +211,7 @@ export function repairJobsToExportRows(jobs: RepairJob[]): RepairExportRow[] {
     Models: job.device_model,
     Issue: job.issue,
     Repairs: job.parts_used,
+    Price: job.price ?? "",
     "Recorded by": job.recorded_by_email ?? "",
   }));
 }

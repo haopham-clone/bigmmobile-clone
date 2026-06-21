@@ -8,11 +8,14 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Minus,
+  Plus,
   Search,
   X,
 } from "lucide-react";
 import type { Product, ProductSortOption } from "@/types/database";
 import { formatAUD } from "@/lib/utils";
+import { useBatchedStockAdjust } from "@/lib/use-batched-stock-adjust";
 import { AddProductDialog } from "./add-product-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,6 +125,51 @@ function buildQueryString(
   return qs ? `?${qs}` : "";
 }
 
+function StockQtyCell({
+  product,
+  onAdjust,
+}: {
+  product: Product;
+  onAdjust: (product: Product, delta: number) => void;
+}) {
+  const isLowStock = product.quantity > 0 && product.quantity < 3;
+
+  return (
+    <div
+      className="flex items-center justify-center gap-1"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7 shrink-0"
+        disabled={product.quantity === 0}
+        onClick={() => onAdjust(product, -1)}
+        aria-label="Decrease stock"
+      >
+        <Minus className="h-3 w-3" />
+      </Button>
+      <span className="min-w-[2ch] text-center font-semibold tabular-nums">
+        {product.quantity}
+      </span>
+      {isLowStock ? (
+        <Badge variant="destructive" className="px-1 text-[10px]">
+          Low
+        </Badge>
+      ) : null}
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-7 w-7 shrink-0"
+        onClick={() => onAdjust(product, 1)}
+        aria-label="Increase stock"
+      >
+        <Plus className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
 export function ProductClient({
   products: initialProducts,
   total,
@@ -144,6 +192,7 @@ export function ProductClient({
   const [hideZeroStock, setHideZeroStock] = useState(initialFilters.hideZeroStock);
   const [hideInactive, setHideInactive] = useState(initialFilters.hideInactive);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const { adjust: handleAdjust } = useBatchedStockAdjust(setProducts, () => router.refresh());
 
   useEffect(() => {
     setProducts(initialProducts);
@@ -378,7 +427,7 @@ export function ProductClient({
               <TableHead>SKU</TableHead>
               <TableHead className="text-right">Cost</TableHead>
               <TableHead className="text-right">Sell</TableHead>
-              <TableHead className="text-center">Qty</TableHead>
+              <TableHead className="w-40 text-center">Qty</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -446,7 +495,11 @@ export function ProductClient({
                       {formatAUD(Number(first.selling_price))}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className="font-semibold">{totalQty}</span>
+                      {hasVariants ? (
+                        <span className="font-semibold tabular-nums">{totalQty}</span>
+                      ) : (
+                        <StockQtyCell product={first} onAdjust={handleAdjust} />
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -456,7 +509,6 @@ export function ProductClient({
                 }
 
                 const variantRows = group.products.map((product) => {
-                  const isLowStock = product.quantity > 0 && product.quantity < 3;
                   const detailHref = `/dashboard/products/item/${product.id}`;
 
                   return (
@@ -497,14 +549,7 @@ export function ProductClient({
                         {formatAUD(Number(product.selling_price))}
                       </TableCell>
                       <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <span className="font-semibold">{product.quantity}</span>
-                          {isLowStock && (
-                            <Badge variant="destructive" className="px-1 text-[10px]">
-                              Low
-                            </Badge>
-                          )}
-                        </div>
+                        <StockQtyCell product={product} onAdjust={handleAdjust} />
                       </TableCell>
                     </TableRow>
                   );
